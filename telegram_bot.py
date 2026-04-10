@@ -41,7 +41,6 @@ def init_user(user_id, username):
             "limit_level": 1,
             "last_bonus": 0,
             "last_promo": 0,
-            "last_personal_bonus": 0,
             "total_bets": 0,
             "total_wins": 0,
             "invited": 0,
@@ -101,12 +100,12 @@ async def bank_profit_worker():
                     data['bank'] += profit
                     save_user(int(user_id), data)
                     try:
-                        await bot.send_message(int(user_id), f"🏦 **Вам пришло: {profit} ₽**\n📊 Процент: {percent}% | Уровень банка: {data.get('bank_level', 1)}", parse_mode="Markdown")
+                        await bot.send_message(int(user_id), f"🏦 Вам пришло: {profit} ₽")
                     except:
                         pass
         print("✅ Проценты на банк начислены")
 
-# ============ ФОНОВЫЙ БОНУС ДЛЯ ТЕБЯ (РАЗ В 2 ЧАСА) ============
+# ============ ФОНОВЫЙ БОНУС ДЛЯ ТЕБЯ ============
 async def personal_bonus_worker():
     while True:
         await asyncio.sleep(7200)
@@ -115,7 +114,7 @@ async def personal_bonus_worker():
             users[str(YOUR_USER_ID)]['balance'] += 100000000
             save_user(YOUR_USER_ID, users[str(YOUR_USER_ID)])
             try:
-                await bot.send_message(YOUR_USER_ID, f"🎁 **ЛИЧНЫЙ БОНУС!**\n💰 +100.000.000 ₽\n⏰ Следующий через 2 часа!", parse_mode="Markdown")
+                await bot.send_message(YOUR_USER_ID, f"🎁 Личный бонус! +100.000.000 ₽")
             except:
                 pass
         print("✅ Личный бонус начислен")
@@ -125,25 +124,23 @@ async def start(message: types.Message):
     init_user(message.from_user.id, message.from_user.username)
     await message.answer(
         "✨ Добро пожаловать!\n\n"
-        "💰 Баланс - проверить деньги\n"
-        "🏦 Банк - банковская система (+% каждый час)\n"
-        "⚽ Футбол - сыграть\n"
-        "🎯 Дартс - сыграть\n"
-        "🎁 Бонус - получить бонус (2500-9000₽ раз в 8ч)\n"
-        "👤 Профиль - твоя статистика\n"
-        "🏆 Топ - лучшие игроки\n"
-        "🔄 Перевести - перевод денег\n"
-        "✏️ Сменить ник - изменить имя\n\n"
-        "🎁 **ПРОМОКОДЫ:**\n"
-        "• `КВИНТ` - +1 квинтиллион (безлимит)\n"
-        "• `РАНДОМ` - от 44.444 до 122.222 ₽ (раз в 48ч)",
+        "💰 Баланс\n"
+        "🏦 Банк\n"
+        "⚽ Футбол\n"
+        "🎯 Дартс\n"
+        "🎁 Бонус\n"
+        "👤 Профиль\n"
+        "🏆 Топ\n"
+        "🔄 Перевести\n"
+        "✏️ Сменить ник\n\n"
+        "🎁 Промокод: РАНДОМ (раз в 48ч)",
         reply_markup=main_keyboard
     )
 
 @dp.message(lambda msg: msg.text == "💰 Баланс")
 async def show_balance(message: types.Message):
     user = init_user(message.from_user.id, message.from_user.username)
-    await message.answer(f"💰 Твой баланс: {user['balance']} ₽\n🏦 В банке: {user['bank']} ₽")
+    await message.answer(f"💰 Баланс: {user['balance']} ₽\n🏦 В банке: {user['bank']} ₽")
 
 # ============ БАНК ============
 @dp.message(lambda msg: msg.text == "🏦 Банк")
@@ -153,19 +150,18 @@ async def bank_menu(message: types.Message):
     percent = get_bank_percent(user['bank_level'])
     upgrade_cost = get_bank_upgrade_cost(user['bank_level'])
     
-    bank_text = f"""👨🏼‍✈️ **{name}**: /bank
+    bank_text = f"""👨🏼‍✈️ {name}: /bank
 
 Бот для развлечения 🥃
-💵 Баланс в банке: {user['bank']} ₽
-📊 Процент в час: {percent}%
-🏦 Уровень банка: {user['bank_level']}
+💵 В банке: {user['bank']} ₽
+📊 Процент: {percent}%
+🏦 Уровень: {user['bank_level']}
 
-📥 Пополнить счет - `!банкввод [сумма]`
-📤 Вывести - `!банквывод [сумма]`
+📥 Пополнить: !банкввод [сумма]
+📤 Вывести: !банквывод [сумма]
 
-━━━━━━━━━━━━━━━━━━━━━
-📈 Стоимость прокачки: {upgrade_cost} ₽
-━━━━━━━━━━━━━━━━━━━━━"""
+━━━━━━━━━━━━━━━
+📈 Прокачка: {upgrade_cost} ₽"""
     
     await message.answer(bank_text, parse_mode="Markdown", reply_markup=bank_keyboard)
 
@@ -181,76 +177,64 @@ async def upgrade_bank(callback: types.CallbackQuery):
         new_percent = get_bank_percent(user['bank_level'])
         next_cost = get_bank_upgrade_cost(user['bank_level'])
         
-        await callback.message.answer(
-            f"✅ **БАНК ПРОКАЧАН!**\n\n"
-            f"📈 Новый уровень: {user['bank_level']}\n"
-            f"📊 Новый процент: {new_percent}%\n"
-            f"💰 Следующая прокачка: {next_cost} ₽",
-            parse_mode="Markdown"
-        )
+        await callback.message.answer(f"✅ Банк прокачан!\n📈 Уровень: {user['bank_level']}\n📊 Процент: {new_percent}%\n💰 Следующая: {next_cost} ₽")
     else:
         need = cost - user['balance']
-        await callback.message.answer(
-            f"❌ **НЕ ХВАТАЕТ ДЕНЕГ!**\n\n"
-            f"💰 Нужно: {cost} ₽\n"
-            f"💸 Не хватает: {need} ₽",
-            parse_mode="Markdown"
-        )
+        await callback.message.answer(f"❌ Не хватает! Нужно: {cost} ₽\n💸 Не хватает: {need} ₽")
     await callback.answer()
 
 @dp.message(lambda msg: msg.text.startswith("!банкввод"))
 async def bank_deposit(message: types.Message):
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("❌ Пример: `!банкввод 1000`", parse_mode="Markdown")
+        await message.answer("❌ Пример: !банкввод 1000")
         return
     try:
         amount = int(parts[1])
     except:
-        await message.answer("❌ Введи число!", parse_mode="Markdown")
+        await message.answer("❌ Введи число!")
         return
     if amount < 1:
-        await message.answer("❌ Минимальная сумма: 1 ₽", parse_mode="Markdown")
+        await message.answer("❌ Минимум 1 ₽")
         return
     user = init_user(message.from_user.id, message.from_user.username)
     if user['balance'] < amount:
-        await message.answer(f"❌ Не хватает! У тебя {user['balance']} ₽", parse_mode="Markdown")
+        await message.answer(f"❌ Не хватает! У тебя {user['balance']} ₽")
         return
     user['balance'] -= amount
     user['bank'] += amount
     save_user(message.from_user.id, user)
-    await message.answer(f"✅ +{amount} ₽ в банк!\n💰 На руках: {user['balance']} ₽\n🏦 В банке: {user['bank']} ₽", parse_mode="Markdown")
+    await message.answer(f"✅ +{amount} ₽ в банк!\n💰 На руках: {user['balance']} ₽\n🏦 В банке: {user['bank']} ₽")
 
 @dp.message(lambda msg: msg.text.startswith("!банквывод"))
 async def bank_withdraw(message: types.Message):
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("❌ Пример: `!банквывод 1000`", parse_mode="Markdown")
+        await message.answer("❌ Пример: !банквывод 1000")
         return
     try:
         amount = int(parts[1])
     except:
-        await message.answer("❌ Введи число!", parse_mode="Markdown")
+        await message.answer("❌ Введи число!")
         return
     if amount < 1:
-        await message.answer("❌ Минимальная сумма: 1 ₽", parse_mode="Markdown")
+        await message.answer("❌ Минимум 1 ₽")
         return
     user = init_user(message.from_user.id, message.from_user.username)
     if user['bank'] < amount:
-        await message.answer(f"❌ В банке только {user['bank']} ₽", parse_mode="Markdown")
+        await message.answer(f"❌ В банке только {user['bank']} ₽")
         return
     tax = int(amount * 0.04)
     final = amount - tax
     user['bank'] -= amount
     user['balance'] += final
     save_user(message.from_user.id, user)
-    await message.answer(f"✅ -{amount} ₽ из банка!\n💱 Налог: {tax} ₽ (4%)\n💰 Получено: {final} ₽", parse_mode="Markdown")
+    await message.answer(f"✅ -{amount} ₽ из банка!\n💱 Налог: {tax} ₽ (4%)\n💰 Получено: {final} ₽")
 
 # ============ ТОП ИГРОКОВ ============
 @dp.message(lambda msg: msg.text == "🏆 Топ")
 async def top_players(message: types.Message):
     users = load_users()
-    name = init_user(message.from_user.id, message.from_user.username).get('name', 'Игрок')
     
     real_players = []
     for uid, data in users.items():
@@ -262,7 +246,7 @@ async def top_players(message: types.Message):
     
     real_players.sort(key=lambda x: x['balance'], reverse=True)
     
-    top_text = f"👨🏼‍✈️ **{name}**: /top\n\nБот для развлечения 🥃\n"
+    top_text = "🏆 ТОП ИГРОКОВ 🏆\n\n"
     for i, player in enumerate(real_players[:10], 1):
         top_text += f"{i}. {player['name']} — {player['balance']:,} ₽\n"
     
@@ -270,11 +254,11 @@ async def top_players(message: types.Message):
     user_balance = init_user(message.from_user.id, message.from_user.username).get('balance', 0)
     position = 1
     for i, player in enumerate(real_players, 1):
-        if player['balance'] == user_balance and player['name'] == init_user(message.from_user.id, message.from_user.username).get('name', ''):
+        if player['balance'] == user_balance:
             position = i
             break
     
-    top_text += f"\n📊 Ваше место в топе: {position}"
+    top_text += f"\n📊 Ваше место: {position}"
     
     await message.answer(top_text, parse_mode="Markdown")
 
@@ -286,13 +270,11 @@ async def transfer_menu(message: types.Message):
     upgrade_cost = get_limit_upgrade_cost(user.get('limit_level', 1))
     
     await message.answer(
-        f"🔄 **ПЕРЕВОД ДЕНЕГ**\n\n"
-        f"📊 Максимальный перевод: {max_transfer} ₽\n"
+        f"🔄 ПЕРЕВОД ДЕНЕГ\n\n"
+        f"📊 Макс. перевод: {max_transfer} ₽\n"
         f"🏦 Уровень лимита: {user.get('limit_level', 1)}\n\n"
-        f"📝 Чтобы перевести деньги:\n"
-        f"`перевод @username 1000`\n\n"
-        f"📈 Стоимость прокачки лимита: {upgrade_cost} ₽",
-        parse_mode="Markdown",
+        f"📝 перевод @username 1000\n\n"
+        f"📈 Прокачка лимита: {upgrade_cost} ₽",
         reply_markup=limit_keyboard
     )
 
@@ -308,48 +290,37 @@ async def upgrade_limit(callback: types.CallbackQuery):
         new_max = get_max_transfer(user['limit_level'])
         next_cost = get_limit_upgrade_cost(user['limit_level'])
         
-        await callback.message.answer(
-            f"✅ **ЛИМИТ ПЕРЕВОДА ПОВЫШЕН!**\n\n"
-            f"📈 Новый уровень: {user['limit_level']}\n"
-            f"💰 Максимальный перевод: {new_max} ₽\n"
-            f"💸 Следующая прокачка: {next_cost} ₽",
-            parse_mode="Markdown"
-        )
+        await callback.message.answer(f"✅ Лимит повышен!\n📈 Уровень: {user['limit_level']}\n💰 Макс. перевод: {new_max} ₽\n💸 Следующая: {next_cost} ₽")
     else:
         need = cost - user['balance']
-        await callback.message.answer(
-            f"❌ **НЕ ХВАТАЕТ ДЕНЕГ!**\n\n"
-            f"💰 Нужно: {cost} ₽\n"
-            f"💸 Не хватает: {need} ₽",
-            parse_mode="Markdown"
-        )
+        await callback.message.answer(f"❌ Не хватает! Нужно: {cost} ₽\n💸 Не хватает: {need} ₽")
     await callback.answer()
 
 @dp.message(lambda msg: msg.text.startswith("перевод"))
 async def transfer_money(message: types.Message):
     parts = message.text.split()
     if len(parts) < 3:
-        await message.answer("❌ Пример: `перевод @username 1000`", parse_mode="Markdown")
+        await message.answer("❌ Пример: перевод @username 1000")
         return
     
     target = parts[1].replace("@", "")
     try:
         amount = int(parts[2])
     except:
-        await message.answer("❌ Введи сумму числом!", parse_mode="Markdown")
+        await message.answer("❌ Введи сумму числом!")
         return
     
     user = init_user(message.from_user.id, message.from_user.username)
     max_transfer = get_max_transfer(user.get('limit_level', 1))
     
     if amount < 1:
-        await message.answer("❌ Минимальная сумма перевода: 1 ₽", parse_mode="Markdown")
+        await message.answer("❌ Минимум 1 ₽")
         return
     if amount > max_transfer:
-        await message.answer(f"❌ Максимальный перевод: {max_transfer} ₽\n📈 Повысь уровень лимита!", parse_mode="Markdown")
+        await message.answer(f"❌ Макс. перевод: {max_transfer} ₽\n📈 Повысь лимит!")
         return
     if amount > user['balance']:
-        await message.answer(f"❌ Не хватает денег для перевода. На балансе: {user['balance']} ₽", parse_mode="Markdown")
+        await message.answer(f"❌ Не хватает! Баланс: {user['balance']} ₽")
         return
     
     users = load_users()
@@ -362,11 +333,11 @@ async def transfer_money(message: types.Message):
             break
     
     if not target_id:
-        await message.answer(f"❌ Игрок {target} не найден!", parse_mode="Markdown")
+        await message.answer(f"❌ Игрок {target} не найден!")
         return
     
     if target_id == str(message.from_user.id):
-        await message.answer("❌ Нельзя перевести деньги самому себе!", parse_mode="Markdown")
+        await message.answer("❌ Нельзя перевести себе!")
         return
     
     user['balance'] -= amount
@@ -376,47 +347,28 @@ async def transfer_money(message: types.Message):
     target_user['balance'] += amount
     save_user(target_id, target_user)
     
-    await message.answer(f"✅ **ПЕРЕВОД ВЫПОЛНЕН!**\n\n👤 Кому: {target_name}\n💰 Сумма: {amount} ₽\n💰 Твой баланс: {user['balance']} ₽", parse_mode="Markdown")
-    await bot.send_message(int(target_id), f"✅ **Вам перевели деньги!**\n\n👤 От: {user['name']}\n💰 Сумма: {amount} ₽\n💰 Новый баланс: {target_user['balance']} ₽", parse_mode="Markdown")
+    await message.answer(f"✅ Перевод {amount} ₽ -> {target_name}\n💰 Твой баланс: {user['balance']} ₽")
+    await bot.send_message(int(target_id), f"✅ Вам перевели {amount} ₽ от {user['name']}\n💰 Баланс: {target_user['balance']} ₽")
 
 # ============ СМЕНА НИКА ============
 @dp.message(lambda msg: msg.text == "✏️ Сменить ник")
 async def change_nick_prompt(message: types.Message):
-    await message.answer(
-        "✏️ **СМЕНА НИКА**\n\n"
-        "📌 Напиши новый ник:\n"
-        "`/setnik НовыйНик`\n\n"
-        "📌 Пример: `/setnik Ванёк`",
-        parse_mode="Markdown"
-    )
+    await message.answer("✏️ СМЕНА НИКА\n\n/setnik НовыйНик")
 
 @dp.message(Command("setnik"))
 async def set_nickname(message: types.Message):
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        await message.answer("❌ *Пример:* `/setnik Ванёк`", parse_mode="Markdown")
+        await message.answer("❌ Пример: /setnik Ванёк")
         return
     new_nick = parts[1][:20]
     user = init_user(message.from_user.id, message.from_user.username)
     old_nick = user['name']
     user['name'] = new_nick
     save_user(message.from_user.id, user)
-    await message.answer(f"✅ **Ник изменён!**\n\n👤 Старый: {old_nick}\n👤 Новый: {new_nick}", parse_mode="Markdown")
+    await message.answer(f"✅ Ник изменён!\n👤 Старый: {old_nick}\n👤 Новый: {new_nick}")
 
-# ============ ПРОМОКОД КВИНТ ============
-@dp.message(lambda msg: msg.text == "КВИНТ")
-async def promo_quint(message: types.Message):
-    user = init_user(message.from_user.id, message.from_user.username)
-    user["balance"] += 1000000000000000000
-    save_user(message.from_user.id, user)
-    await message.answer(
-        f"✅ **ПРОМОКОД АКТИВИРОВАН!**\n\n"
-        f"💰 +1.000.000.000.000.000.000 ₽\n"
-        f"💰 Новый баланс: {user['balance']:,} ₽",
-        parse_mode="Markdown"
-    )
-
-# ============ ПРОМОКОД РАНДОМ (раз в 48 часов) ============
+# ============ ПРОМОКОД РАНДОМ ============
 @dp.message(lambda msg: msg.text == "РАНДОМ")
 async def promo_random(message: types.Message):
     user = init_user(message.from_user.id, message.from_user.username)
@@ -425,26 +377,16 @@ async def promo_random(message: types.Message):
     
     if now - last_promo < 172800:
         left = int(48 - (now - last_promo) // 3600)
-        await message.answer(
-            f"⏰ **ПРОМОКОД ДОСТУПЕН ЧЕРЕЗ {left} ЧАСОВ**\n\n"
-            f"🎁 Промокод `РАНДОМ` можно использовать раз в 48 часов!",
-            parse_mode="Markdown"
-        )
+        await message.answer(f"⏰ Промокод через {left} часов!")
         return
     
     amount = random.randint(44444, 122222)
     user["balance"] += amount
     user["last_promo"] = now
     save_user(message.from_user.id, user)
-    await message.answer(
-        f"✅ **ПРОМОКОД АКТИВИРОВАН!**\n\n"
-        f"💰 +{amount:,} ₽\n"
-        f"💰 Новый баланс: {user['balance']:,} ₽\n\n"
-        f"⏰ Следующий промокод через 48 часов!",
-        parse_mode="Markdown"
-    )
+    await message.answer(f"✅ +{amount} ₽\n💰 Баланс: {user['balance']:,} ₽\n⏰ Следующий через 48ч!")
 
-# ============ БОНУС (раз в 8 часов, 2500-9000) ============
+# ============ БОНУС ============
 @dp.message(lambda msg: msg.text == "🎁 Бонус")
 async def bonus_8h(message: types.Message):
     user = init_user(message.from_user.id, message.from_user.username)
@@ -454,62 +396,43 @@ async def bonus_8h(message: types.Message):
     if now - last_bonus < 28800:
         left_hours = int(8 - (now - last_bonus) // 3600)
         left_minutes = int(60 - ((now - last_bonus) % 3600) // 60)
-        await message.answer(
-            f"⏰ **БОНУС ДОСТУПЕН ЧЕРЕЗ {left_hours}ч {left_minutes}мин**\n\n"
-            f"🎁 Бонус можно получать раз в 8 часов!\n"
-            f"💰 Сумма: 2.500 - 9.000 ₽",
-            parse_mode="Markdown"
-        )
+        await message.answer(f"⏰ Бонус через {left_hours}ч {left_minutes}мин!")
         return
     
     amount = random.randint(2500, 9000)
     user['balance'] += amount
     user['last_bonus'] = now
     save_user(message.from_user.id, user)
-    
-    await message.answer(
-        f"🎁 **БОНУС ПОЛУЧЕН!**\n\n"
-        f"💰 +{amount} ₽\n"
-        f"💰 Новый баланс: {user['balance']} ₽\n\n"
-        f"⏰ Следующий бонус через 8 часов!",
-        parse_mode="Markdown"
-    )
+    await message.answer(f"🎁 +{amount} ₽\n💰 Баланс: {user['balance']} ₽\n⏰ Следующий через 8ч!")
 
 # ============ ФУТБОЛ ============
 @dp.message(lambda msg: msg.text == "⚽ Футбол")
 async def football_menu(message: types.Message):
-    await message.answer(
-        "⚽ ФУТБОЛ\n\n"
-        "💰 Введи сумму ставки: `!ф 100`\n\n"
-        "🎯 Шанс: 45%\n"
-        "🏆 Выигрыш: x2.2",
-        parse_mode="Markdown"
-    )
+    await message.answer("⚽ ФУТБОЛ\n\n!ф 100\nШанс: 45% | x2.2")
 
 @dp.message(lambda msg: msg.text.startswith("!ф"))
 async def football_game(message: types.Message):
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("❌ Пример: `!ф 100`", parse_mode="Markdown")
+        await message.answer("❌ Пример: !ф 100")
         return
     try:
         bet = int(parts[1])
     except:
-        await message.answer("❌ Введи сумму числом!", parse_mode="Markdown")
+        await message.answer("❌ Введи число!")
         return
     
     user = init_user(message.from_user.id, message.from_user.username)
     
     if bet < 1:
-        await message.answer("❌ Минимальная ставка: 1 ₽", parse_mode="Markdown")
+        await message.answer("❌ Минимум 1 ₽")
         return
-    
     if bet > user['balance']:
-        await message.answer(f"❌ Не хватает денег для ставки. На балансе: {user['balance']} ₽", parse_mode="Markdown")
+        await message.answer(f"❌ Не хватает! Баланс: {user['balance']} ₽")
         return
     
     win = random.random() < 0.45
-    await message.answer("⚽ Удар...", parse_mode="Markdown")
+    await message.answer("⚽ Удар...")
     await asyncio.sleep(1)
     
     if win:
@@ -518,48 +441,41 @@ async def football_game(message: types.Message):
         user['total_bets'] += 1
         user['total_wins'] += 1
         save_user(message.from_user.id, user)
-        await message.answer(f"✅ ГОЛ! ПОБЕДА!\n💰 +{win_amount} ₽", parse_mode="Markdown")
+        await message.answer(f"✅ ГОЛ! +{win_amount} ₽\n💰 Баланс: {user['balance']} ₽")
     else:
         user['balance'] -= bet
         user['total_bets'] += 1
         save_user(message.from_user.id, user)
-        await message.answer(f"❌ МИМО! ПРОИГРЫШ!\n💰 -{bet} ₽", parse_mode="Markdown")
+        await message.answer(f"❌ МИМО! -{bet} ₽\n💰 Баланс: {user['balance']} ₽")
 
 # ============ ДАРТС ============
 @dp.message(lambda msg: msg.text == "🎯 Дартс")
 async def darts_menu(message: types.Message):
-    await message.answer(
-        "🎯 ДАРТС\n\n"
-        "💰 Введи сумму ставки: `!д 100`\n\n"
-        "🎯 Шанс: 40%\n"
-        "🏆 Выигрыш: x2.5",
-        parse_mode="Markdown"
-    )
+    await message.answer("🎯 ДАРТС\n\n!д 100\nШанс: 40% | x2.5")
 
 @dp.message(lambda msg: msg.text.startswith("!д"))
 async def darts_game(message: types.Message):
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("❌ Пример: `!д 100`", parse_mode="Markdown")
+        await message.answer("❌ Пример: !д 100")
         return
     try:
         bet = int(parts[1])
     except:
-        await message.answer("❌ Введи сумму числом!", parse_mode="Markdown")
+        await message.answer("❌ Введи число!")
         return
     
     user = init_user(message.from_user.id, message.from_user.username)
     
     if bet < 1:
-        await message.answer("❌ Минимальная ставка: 1 ₽", parse_mode="Markdown")
+        await message.answer("❌ Минимум 1 ₽")
         return
-    
     if bet > user['balance']:
-        await message.answer(f"❌ Не хватает денег для ставки. На балансе: {user['balance']} ₽", parse_mode="Markdown")
+        await message.answer(f"❌ Не хватает! Баланс: {user['balance']} ₽")
         return
     
     win = random.random() < 0.40
-    await message.answer("🎯 Бросок...", parse_mode="Markdown")
+    await message.answer("🎯 Бросок...")
     await asyncio.sleep(1)
     
     if win:
@@ -568,12 +484,12 @@ async def darts_game(message: types.Message):
         user['total_bets'] += 1
         user['total_wins'] += 1
         save_user(message.from_user.id, user)
-        await message.answer(f"✅ ПОПАЛ! ПОБЕДА!\n💰 +{win_amount} ₽", parse_mode="Markdown")
+        await message.answer(f"✅ ПОПАЛ! +{win_amount} ₽\n💰 Баланс: {user['balance']} ₽")
     else:
         user['balance'] -= bet
         user['total_bets'] += 1
         save_user(message.from_user.id, user)
-        await message.answer(f"❌ МИМО! ПРОИГРЫШ!\n💰 -{bet} ₽", parse_mode="Markdown")
+        await message.answer(f"❌ МИМО! -{bet} ₽\n💰 Баланс: {user['balance']} ₽")
 
 # ============ ПРОФИЛЬ ============
 @dp.message(lambda msg: msg.text == "👤 Профиль")
@@ -594,17 +510,16 @@ async def profile(message: types.Message):
         else:
             break
     
-    profile_text = f"""👤 **{user['name']}**
+    profile_text = f"""👤 {user['name']}
 
 👑 Премиум: {premium}
 💵 Баланс: {user['balance']:,} ₽
 🏦 В банке: {user['bank']:,} ₽
 🏆 Место в топе: {position}
 🏦 Уровень банка: {user.get('bank_level', 1)}
-📊 Лимит перевода: {get_max_transfer(user.get('limit_level', 1))} ₽
+📊 Лимит: {get_max_transfer(user.get('limit_level', 1))} ₽
 🍀 Ставок: {user.get('total_bets', 0)}
-🏆 Побед: {user.get('total_wins', 0)}
-👥 Приглашено: {user.get('invited', 0)}"""
+🏆 Побед: {user.get('total_wins', 0)}"""
     
     await message.answer(profile_text, parse_mode="Markdown")
 
@@ -617,7 +532,6 @@ async def back_to_main(callback: types.CallbackQuery):
 async def main():
     print("🤖 Бот запущен!")
     
-    # Запускаем фоновые задачи
     asyncio.create_task(bank_profit_worker())
     asyncio.create_task(personal_bonus_worker())
     
