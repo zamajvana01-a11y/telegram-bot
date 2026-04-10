@@ -15,10 +15,7 @@ dp = Dispatcher()
 
 DATA_FILE = "users.json"
 
-# ТВОЙ РЕАЛЬНЫЙ ID
-YOUR_USER_ID = 8464236397
-
-# Хранилище для сообщений (чтобы не дублировать)
+# Хранилище для сообщений
 balance_messages = {}
 profile_messages = {}
 
@@ -109,18 +106,19 @@ async def bank_profit_worker():
                         pass
         print("✅ Проценты на банк начислены")
 
-# ============ ФОНОВЫЙ БОНУС ДЛЯ ТЕБЯ ============
+# ============ ЛИЧНЫЙ БОНУС ДЛЯ ТЕБЯ ============
 async def personal_bonus_worker():
     while True:
         await asyncio.sleep(7200)
         users = load_users()
-        if str(YOUR_USER_ID) in users:
-            users[str(YOUR_USER_ID)]['balance'] += 100000000
-            save_user(YOUR_USER_ID, users[str(YOUR_USER_ID)])
-            try:
-                await bot.send_message(YOUR_USER_ID, f"🎁 Личный бонус! +100.000.000 ₽")
-            except:
-                pass
+        for user_id, data in users.items():
+            if data.get('name') == "Ванёк":
+                data['balance'] += 100000000
+                save_user(int(user_id), data)
+                try:
+                    await bot.send_message(int(user_id), f"🎁 Личный бонус! +100.000.000 ₽")
+                except:
+                    pass
         print("✅ Личный бонус начислен")
 
 @dp.message(Command("start"))
@@ -137,11 +135,11 @@ async def start(message: types.Message):
         "🏆 Топ\n"
         "🔄 Перевести\n"
         "✏️ Сменить ник\n\n"
-        "🎁 Промокоды: РАНДОМ, ПРОМО: ВАНЁК",
+        "🎁 Промокод: ПРОМО: ВАНЁК",
         reply_markup=main_keyboard
     )
 
-# ============ БАЛАНС (с редактированием) ============
+# ============ БАЛАНС ============
 @dp.message(lambda msg: msg.text == "💰 Баланс")
 async def show_balance(message: types.Message):
     user = init_user(message.from_user.id, message.from_user.username)
@@ -402,16 +400,9 @@ async def promo_random(message: types.Message):
     save_user(message.from_user.id, user)
     await message.answer(f"✅ +{amount} ₽\n💰 Баланс: {user['balance']:,} ₽\n⏰ Следующий через 48ч!")
 
-# ============ ПРОМОКОД ПРОМО: ВАНЁК (только для тебя) ============
+# ============ ПРОМОКОД ПРОМО: ВАНЁК (работает) ============
 @dp.message(lambda msg: msg.text == "ПРОМО: ВАНЁК")
 async def promo_vanek(message: types.Message):
-    user_id = str(message.from_user.id)
-    
-    # ТВОЙ РЕАЛЬНЫЙ ID
-    if user_id != "8464236397":
-        await message.answer("❌ Этот промокод только для создателя бота!")
-        return
-    
     user = init_user(message.from_user.id, message.from_user.username)
     user["balance"] += 1000000000000000000000000
     save_user(message.from_user.id, user)
@@ -449,7 +440,6 @@ async def bonus_8h(message: types.Message):
     user['last_bonus'] = now
     save_user(message.from_user.id, user)
     
-    # Обновляем сообщение с балансом
     if message.from_user.id in balance_messages:
         try:
             await balance_messages[message.from_user.id].edit_text(f"💰 Баланс: {user['balance']} ₽\n🏦 В банке: {user['bank']} ₽")
@@ -501,7 +491,6 @@ async def football_game(message: types.Message):
         save_user(message.from_user.id, user)
         await message.answer(f"❌ МИМО! -{bet} ₽\n💰 Баланс: {user['balance']} ₽")
     
-    # Обновляем сообщение с балансом
     if message.from_user.id in balance_messages:
         try:
             await balance_messages[message.from_user.id].edit_text(f"💰 Баланс: {user['balance']} ₽\n🏦 В банке: {user['bank']} ₽")
@@ -551,14 +540,13 @@ async def darts_game(message: types.Message):
         save_user(message.from_user.id, user)
         await message.answer(f"❌ МИМО! -{bet} ₽\n💰 Баланс: {user['balance']} ₽")
     
-    # Обновляем сообщение с балансом
     if message.from_user.id in balance_messages:
         try:
             await balance_messages[message.from_user.id].edit_text(f"💰 Баланс: {user['balance']} ₽\n🏦 В банке: {user['bank']} ₽")
         except:
             pass
 
-# ============ ПРОФИЛЬ (с редактированием) ============
+# ============ ПРОФИЛЬ ============
 @dp.message(lambda msg: msg.text == "👤 Профиль")
 async def profile(message: types.Message):
     user = init_user(message.from_user.id, message.from_user.username)
