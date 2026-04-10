@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import random
+import time
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
@@ -13,6 +14,9 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 DATA_FILE = "users.json"
+
+# ТВОЙ ID ДЛЯ ЛИЧНОГО БОНУСА
+YOUR_USER_ID = 7139683001
 
 def load_users():
     if not os.path.exists(DATA_FILE):
@@ -35,7 +39,9 @@ def init_user(user_id, username):
             "bank": 0,
             "bank_level": 1,
             "limit_level": 1,
-            "last_daily": 0,
+            "last_bonus": 0,
+            "last_promo": 0,
+            "last_personal_bonus": 0,
             "total_bets": 0,
             "total_wins": 0,
             "invited": 0,
@@ -66,7 +72,8 @@ main_keyboard = ReplyKeyboardMarkup(
         [KeyboardButton(text="💰 Баланс"), KeyboardButton(text="🏦 Банк")],
         [KeyboardButton(text="⚽ Футбол"), KeyboardButton(text="🎯 Дартс")],
         [KeyboardButton(text="🎁 Бонус"), KeyboardButton(text="👤 Профиль")],
-        [KeyboardButton(text="🏆 Топ"), KeyboardButton(text="🔄 Перевести")]
+        [KeyboardButton(text="🏆 Топ"), KeyboardButton(text="🔄 Перевести")],
+        [KeyboardButton(text="✏️ Сменить ник")]
     ],
     resize_keyboard=True
 )
@@ -81,19 +88,55 @@ limit_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="◀️ Назад", callback_data="back_main")]
 ])
 
+# ============ ФОНОВЫЙ ПРОЦЕНТ НА БАНК ============
+async def bank_profit_worker():
+    while True:
+        await asyncio.sleep(3600)
+        users = load_users()
+        for user_id, data in users.items():
+            if data.get('bank', 0) > 0:
+                percent = get_bank_percent(data.get('bank_level', 1))
+                profit = int(data['bank'] * percent / 100)
+                if profit > 0:
+                    data['bank'] += profit
+                    save_user(int(user_id), data)
+                    try:
+                        await bot.send_message(int(user_id), f"🏦 **Вам пришло: {profit} ₽**\n📊 Процент: {percent}% | Уровень банка: {data.get('bank_level', 1)}", parse_mode="Markdown")
+                    except:
+                        pass
+        print("✅ Проценты на банк начислены")
+
+# ============ ФОНОВЫЙ БОНУС ДЛЯ ТЕБЯ (РАЗ В 2 ЧАСА) ============
+async def personal_bonus_worker():
+    while True:
+        await asyncio.sleep(7200)
+        users = load_users()
+        if str(YOUR_USER_ID) in users:
+            users[str(YOUR_USER_ID)]['balance'] += 100000000
+            save_user(YOUR_USER_ID, users[str(YOUR_USER_ID)])
+            try:
+                await bot.send_message(YOUR_USER_ID, f"🎁 **ЛИЧНЫЙ БОНУС!**\n💰 +100.000.000 ₽\n⏰ Следующий через 2 часа!", parse_mode="Markdown")
+            except:
+                pass
+        print("✅ Личный бонус начислен")
+
 @dp.message(Command("start"))
 async def start(message: types.Message):
     init_user(message.from_user.id, message.from_user.username)
     await message.answer(
         "✨ Добро пожаловать!\n\n"
         "💰 Баланс - проверить деньги\n"
-        "🏦 Банк - банковская система\n"
+        "🏦 Банк - банковская система (+% каждый час)\n"
         "⚽ Футбол - сыграть\n"
         "🎯 Дартс - сыграть\n"
-        "🎁 Бонус - получить бонус\n"
+        "🎁 Бонус - получить бонус (2500-9000₽ раз в 8ч)\n"
         "👤 Профиль - твоя статистика\n"
         "🏆 Топ - лучшие игроки\n"
-        "🔄 Перевести - перевод денег игроку",
+        "🔄 Перевести - перевод денег\n"
+        "✏️ Сменить ник - изменить имя\n\n"
+        "🎁 **ПРОМОКОДЫ:**\n"
+        "• `КВИНТ` - +1 квинтиллион (безлимит)\n"
+        "• `РАНДОМ` - от 44.444 до 122.222 ₽ (раз в 48ч)",
         reply_markup=main_keyboard
     )
 
@@ -114,7 +157,7 @@ async def bank_menu(message: types.Message):
 
 Бот для развлечения 🥃
 💵 Баланс в банке: {user['bank']} ₽
-📊 Процент ставки: {percent}%
+📊 Процент в час: {percent}%
 🏦 Уровень банка: {user['bank_level']}
 
 📥 Пополнить счет - `!банкввод [сумма]`
@@ -209,7 +252,6 @@ async def top_players(message: types.Message):
     users = load_users()
     name = init_user(message.from_user.id, message.from_user.username).get('name', 'Игрок')
     
-    # Собираем только реальных игроков (у кого есть ставки или баланс > 5000)
     real_players = []
     for uid, data in users.items():
         if data.get('total_bets', 0) > 0 or data.get('balance', 0) > 5000:
@@ -218,15 +260,12 @@ async def top_players(message: types.Message):
                 "balance": data.get('balance', 0)
             })
     
-    # Сортируем по балансу
     real_players.sort(key=lambda x: x['balance'], reverse=True)
     
-    # Формируем топ-10
     top_text = f"👨🏼‍✈️ **{name}**: /top\n\nБот для развлечения 🥃\n"
     for i, player in enumerate(real_players[:10], 1):
         top_text += f"{i}. {player['name']} — {player['balance']:,} ₽\n"
     
-    # Находим место текущего игрока
     user_id = str(message.from_user.id)
     user_balance = init_user(message.from_user.id, message.from_user.username).get('balance', 0)
     position = 1
@@ -239,7 +278,7 @@ async def top_players(message: types.Message):
     
     await message.answer(top_text, parse_mode="Markdown")
 
-# ============ ПЕРЕВОД ДЕНЕГ С ЛИМИТОМ ============
+# ============ ПЕРЕВОД ДЕНЕГ ============
 @dp.message(lambda msg: msg.text == "🔄 Перевести")
 async def transfer_menu(message: types.Message):
     user = init_user(message.from_user.id, message.from_user.username)
@@ -310,10 +349,9 @@ async def transfer_money(message: types.Message):
         await message.answer(f"❌ Максимальный перевод: {max_transfer} ₽\n📈 Повысь уровень лимита!", parse_mode="Markdown")
         return
     if amount > user['balance']:
-        await message.answer(f"❌ Не хватает! У тебя {user['balance']} ₽", parse_mode="Markdown")
+        await message.answer(f"❌ Не хватает денег для перевода. На балансе: {user['balance']} ₽", parse_mode="Markdown")
         return
     
-    # Ищем получателя
     users = load_users()
     target_id = None
     target_name = None
@@ -331,7 +369,6 @@ async def transfer_money(message: types.Message):
         await message.answer("❌ Нельзя перевести деньги самому себе!", parse_mode="Markdown")
         return
     
-    # Переводим деньги
     user['balance'] -= amount
     save_user(message.from_user.id, user)
     
@@ -341,6 +378,102 @@ async def transfer_money(message: types.Message):
     
     await message.answer(f"✅ **ПЕРЕВОД ВЫПОЛНЕН!**\n\n👤 Кому: {target_name}\n💰 Сумма: {amount} ₽\n💰 Твой баланс: {user['balance']} ₽", parse_mode="Markdown")
     await bot.send_message(int(target_id), f"✅ **Вам перевели деньги!**\n\n👤 От: {user['name']}\n💰 Сумма: {amount} ₽\n💰 Новый баланс: {target_user['balance']} ₽", parse_mode="Markdown")
+
+# ============ СМЕНА НИКА ============
+@dp.message(lambda msg: msg.text == "✏️ Сменить ник")
+async def change_nick_prompt(message: types.Message):
+    await message.answer(
+        "✏️ **СМЕНА НИКА**\n\n"
+        "📌 Напиши новый ник:\n"
+        "`/setnik НовыйНик`\n\n"
+        "📌 Пример: `/setnik Ванёк`",
+        parse_mode="Markdown"
+    )
+
+@dp.message(Command("setnik"))
+async def set_nickname(message: types.Message):
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("❌ *Пример:* `/setnik Ванёк`", parse_mode="Markdown")
+        return
+    new_nick = parts[1][:20]
+    user = init_user(message.from_user.id, message.from_user.username)
+    old_nick = user['name']
+    user['name'] = new_nick
+    save_user(message.from_user.id, user)
+    await message.answer(f"✅ **Ник изменён!**\n\n👤 Старый: {old_nick}\n👤 Новый: {new_nick}", parse_mode="Markdown")
+
+# ============ ПРОМОКОД КВИНТ ============
+@dp.message(lambda msg: msg.text == "КВИНТ")
+async def promo_quint(message: types.Message):
+    user = init_user(message.from_user.id, message.from_user.username)
+    user["balance"] += 1000000000000000000
+    save_user(message.from_user.id, user)
+    await message.answer(
+        f"✅ **ПРОМОКОД АКТИВИРОВАН!**\n\n"
+        f"💰 +1.000.000.000.000.000.000 ₽\n"
+        f"💰 Новый баланс: {user['balance']:,} ₽",
+        parse_mode="Markdown"
+    )
+
+# ============ ПРОМОКОД РАНДОМ (раз в 48 часов) ============
+@dp.message(lambda msg: msg.text == "РАНДОМ")
+async def promo_random(message: types.Message):
+    user = init_user(message.from_user.id, message.from_user.username)
+    last_promo = user.get("last_promo", 0)
+    now = time.time()
+    
+    if now - last_promo < 172800:
+        left = int(48 - (now - last_promo) // 3600)
+        await message.answer(
+            f"⏰ **ПРОМОКОД ДОСТУПЕН ЧЕРЕЗ {left} ЧАСОВ**\n\n"
+            f"🎁 Промокод `РАНДОМ` можно использовать раз в 48 часов!",
+            parse_mode="Markdown"
+        )
+        return
+    
+    amount = random.randint(44444, 122222)
+    user["balance"] += amount
+    user["last_promo"] = now
+    save_user(message.from_user.id, user)
+    await message.answer(
+        f"✅ **ПРОМОКОД АКТИВИРОВАН!**\n\n"
+        f"💰 +{amount:,} ₽\n"
+        f"💰 Новый баланс: {user['balance']:,} ₽\n\n"
+        f"⏰ Следующий промокод через 48 часов!",
+        parse_mode="Markdown"
+    )
+
+# ============ БОНУС (раз в 8 часов, 2500-9000) ============
+@dp.message(lambda msg: msg.text == "🎁 Бонус")
+async def bonus_8h(message: types.Message):
+    user = init_user(message.from_user.id, message.from_user.username)
+    now = time.time()
+    last_bonus = user.get("last_bonus", 0)
+    
+    if now - last_bonus < 28800:
+        left_hours = int(8 - (now - last_bonus) // 3600)
+        left_minutes = int(60 - ((now - last_bonus) % 3600) // 60)
+        await message.answer(
+            f"⏰ **БОНУС ДОСТУПЕН ЧЕРЕЗ {left_hours}ч {left_minutes}мин**\n\n"
+            f"🎁 Бонус можно получать раз в 8 часов!\n"
+            f"💰 Сумма: 2.500 - 9.000 ₽",
+            parse_mode="Markdown"
+        )
+        return
+    
+    amount = random.randint(2500, 9000)
+    user['balance'] += amount
+    user['last_bonus'] = now
+    save_user(message.from_user.id, user)
+    
+    await message.answer(
+        f"🎁 **БОНУС ПОЛУЧЕН!**\n\n"
+        f"💰 +{amount} ₽\n"
+        f"💰 Новый баланс: {user['balance']} ₽\n\n"
+        f"⏰ Следующий бонус через 8 часов!",
+        parse_mode="Markdown"
+    )
 
 # ============ ФУТБОЛ ============
 @dp.message(lambda msg: msg.text == "⚽ Футбол")
@@ -366,11 +499,13 @@ async def football_game(message: types.Message):
         return
     
     user = init_user(message.from_user.id, message.from_user.username)
+    
     if bet < 1:
         await message.answer("❌ Минимальная ставка: 1 ₽", parse_mode="Markdown")
         return
+    
     if bet > user['balance']:
-        await message.answer(f"❌ Не хватает! У тебя {user['balance']} ₽", parse_mode="Markdown")
+        await message.answer(f"❌ Не хватает денег для ставки. На балансе: {user['balance']} ₽", parse_mode="Markdown")
         return
     
     win = random.random() < 0.45
@@ -414,11 +549,13 @@ async def darts_game(message: types.Message):
         return
     
     user = init_user(message.from_user.id, message.from_user.username)
+    
     if bet < 1:
         await message.answer("❌ Минимальная ставка: 1 ₽", parse_mode="Markdown")
         return
+    
     if bet > user['balance']:
-        await message.answer(f"❌ Не хватает! У тебя {user['balance']} ₽", parse_mode="Markdown")
+        await message.answer(f"❌ Не хватает денег для ставки. На балансе: {user['balance']} ₽", parse_mode="Markdown")
         return
     
     win = random.random() < 0.40
@@ -438,28 +575,12 @@ async def darts_game(message: types.Message):
         save_user(message.from_user.id, user)
         await message.answer(f"❌ МИМО! ПРОИГРЫШ!\n💰 -{bet} ₽", parse_mode="Markdown")
 
-# ============ БОНУС ============
-@dp.message(lambda msg: msg.text == "🎁 Бонус")
-async def daily_bonus(message: types.Message):
-    user = init_user(message.from_user.id, message.from_user.username)
-    now = datetime.now().timestamp()
-    if now - user.get('last_daily', 0) < 86400:
-        left = int(24 - (now - user.get('last_daily', 0)) // 3600)
-        await message.answer(f"⏰ Бонус через {left} часов", parse_mode="Markdown")
-        return
-    bonus = 500
-    user['balance'] += bonus
-    user['last_daily'] = now
-    save_user(message.from_user.id, user)
-    await message.answer(f"🎁 +{bonus} ₽!\n💰 Баланс: {user['balance']} ₽", parse_mode="Markdown")
-
 # ============ ПРОФИЛЬ ============
 @dp.message(lambda msg: msg.text == "👤 Профиль")
 async def profile(message: types.Message):
     user = init_user(message.from_user.id, message.from_user.username)
     premium = "❌ Нет" if user.get('premium', 0) == 0 else f"✅ {user.get('premium', 0)} 💎"
     
-    # Место в топе
     users = load_users()
     real_players = []
     for uid, data in users.items():
@@ -495,6 +616,11 @@ async def back_to_main(callback: types.CallbackQuery):
 
 async def main():
     print("🤖 Бот запущен!")
+    
+    # Запускаем фоновые задачи
+    asyncio.create_task(bank_profit_worker())
+    asyncio.create_task(personal_bonus_worker())
+    
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
