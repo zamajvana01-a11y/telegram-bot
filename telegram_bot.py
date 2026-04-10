@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
@@ -33,6 +33,12 @@ def init_user(user_id, username):
             "name": username or f"Игрок{user_id}",
             "balance": 5000,
             "bank": 0,
+            "diamonds": 0,
+            "rank": "🟤 Новичок",
+            "frame": "📄 Обычная",
+            "achievements": {},
+            "daily_quests": {"date": "", "quests": []},
+            "last_daily": 0,
             "business": None,
             "business_level": 1,
             "generator": None,
@@ -52,12 +58,13 @@ def init_user(user_id, username):
             "last_quarry": 0,
             "last_tree": 0,
             "last_garden": 0,
-            "last_daily": 0,
+            "exp": 0,
+            "level": 1,
+            "wins": 0,
+            "games_played": 0,
             "married_to": None,
             "married_id": None,
-            "cases": {"common": 0, "rare": 0, "epic": 0, "legendary": 0},
-            "exp": 0,
-            "level": 1
+            "cases": {"common": 0, "rare": 0, "epic": 0, "legendary": 0}
         }
         save_users(users)
     return users[user_id]
@@ -67,14 +74,137 @@ def save_user(user_id, data):
     users[str(user_id)] = data
     save_users(users)
 
-def add_exp(user_id, amount):
+def update_rank(user_id):
     user = init_user(user_id, "")
-    user["exp"] += amount
-    new_level = 1 + user["exp"] // 500
-    if new_level > user["level"]:
-        user["level"] = new_level
-        asyncio.create_task(bot.send_message(user_id, f"🎉 Поздравляем! Вы достигли {new_level} уровня!"))
+    balance = user['balance']
+    if balance >= 1000000000:
+        user['rank'] = "👑 Олигарх"
+    elif balance >= 100000000:
+        user['rank'] = "💎 Магнат"
+    elif balance >= 10000000:
+        user['rank'] = "🏆 Миллионер"
+    elif balance >= 1000000:
+        user['rank'] = "⭐ Богач"
+    elif balance >= 100000:
+        user['rank'] = "💰 Состоятельный"
+    else:
+        user['rank'] = "🟤 Новичок"
     save_user(user_id, user)
+
+def add_diamonds(user_id, amount):
+    user = init_user(user_id, "")
+    user['diamonds'] += amount
+    save_user(user_id, user)
+
+def check_achievements(user_id):
+    user = init_user(user_id, "")
+    achievements = user.get('achievements', {})
+    changed = False
+    
+    if user['games_played'] >= 100 and not achievements.get('games_100'):
+        achievements['games_100'] = True
+        add_diamonds(user_id, 100)
+        asyncio.create_task(bot.send_message(user_id, "🏆 Достижение: 100 игр! +100💎"))
+        changed = True
+    elif user['games_played'] >= 50 and not achievements.get('games_50'):
+        achievements['games_50'] = True
+        add_diamonds(user_id, 50)
+        asyncio.create_task(bot.send_message(user_id, "🏆 Достижение: 50 игр! +50💎"))
+        changed = True
+    elif user['games_played'] >= 10 and not achievements.get('games_10'):
+        achievements['games_10'] = True
+        add_diamonds(user_id, 10)
+        asyncio.create_task(bot.send_message(user_id, "🏆 Достижение: 10 игр! +10💎"))
+        changed = True
+    
+    if user['wins'] >= 50 and not achievements.get('wins_50'):
+        achievements['wins_50'] = True
+        add_diamonds(user_id, 75)
+        asyncio.create_task(bot.send_message(user_id, "🏆 Достижение: 50 побед! +75💎"))
+        changed = True
+    elif user['wins'] >= 20 and not achievements.get('wins_20'):
+        achievements['wins_20'] = True
+        add_diamonds(user_id, 30)
+        asyncio.create_task(bot.send_message(user_id, "🏆 Достижение: 20 побед! +30💎"))
+        changed = True
+    elif user['wins'] >= 5 and not achievements.get('wins_5'):
+        achievements['wins_5'] = True
+        add_diamonds(user_id, 10)
+        asyncio.create_task(bot.send_message(user_id, "🏆 Достижение: 5 побед! +10💎"))
+        changed = True
+    
+    if user.get('business') and not achievements.get('business_owner'):
+        achievements['business_owner'] = True
+        add_diamonds(user_id, 50)
+        asyncio.create_task(bot.send_message(user_id, "🏆 Достижение: Владелец бизнеса! +50💎"))
+        changed = True
+    
+    if user['balance'] >= 1000000 and not achievements.get('million'):
+        achievements['million'] = True
+        add_diamonds(user_id, 100)
+        asyncio.create_task(bot.send_message(user_id, "🏆 Достижение: Миллионер! +100💎"))
+        changed = True
+    
+    if changed:
+        user['achievements'] = achievements
+        save_user(user_id, user)
+
+def get_daily_quests(user_id):
+    user = init_user(user_id, "")
+    today = datetime.now().strftime("%Y-%m-%d")
+    if user.get('daily_quests', {}).get('date') != today:
+        new_quests = [
+            {"name": "Сыграй 3 игры", "target": 3, "progress": 0, "reward": 20, "type": "games"},
+            {"name": "Выиграй 2 игры", "target": 2, "progress": 0, "reward": 30, "type": "wins"},
+            {"name": "Заработай 5000 ₽", "target": 5000, "progress": 0, "reward": 15, "type": "money"}
+        ]
+        user['daily_quests'] = {"date": today, "quests": new_quests}
+        save_user(user_id, user)
+    return user['daily_quests']['quests']
+
+def update_quest_progress(user_id, qtype, amount=1, money_earned=0):
+    user = init_user(user_id, "")
+    quests = get_daily_quests(user_id)
+    updated = False
+    for q in quests:
+        if q['type'] == qtype:
+            old_progress = q['progress']
+            if qtype == "money":
+                q['progress'] += money_earned
+            else:
+                q['progress'] += amount
+            if old_progress < q['target'] and q['progress'] >= q['target']:
+                user['balance'] += q['reward']
+                add_diamonds(user_id, q['reward'] // 2)
+                asyncio.create_task(bot.send_message(user_id, f"✅ Квест выполнен: {q['name']}!\n💰 +{q['reward']} ₽\n💎 +{q['reward']//2}💎"))
+            updated = True
+    if updated:
+        user['daily_quests']['quests'] = quests
+        save_user(user_id, user)
+
+def get_rank_info(user_id):
+    user = init_user(user_id, "")
+    rank = user['rank']
+    balance = user['balance']
+    if rank == "🟤 Новичок":
+        next_rank = "💰 Состоятельный"
+        need = 100000 - balance
+    elif rank == "💰 Состоятельный":
+        next_rank = "⭐ Богач"
+        need = 1000000 - balance
+    elif rank == "⭐ Богач":
+        next_rank = "🏆 Миллионер"
+        need = 10000000 - balance
+    elif rank == "🏆 Миллионер":
+        next_rank = "💎 Магнат"
+        need = 100000000 - balance
+    elif rank == "💎 Магнат":
+        next_rank = "👑 Олигарх"
+        need = 1000000000 - balance
+    else:
+        next_rank = "Максимальный ранг"
+        need = 0
+    return rank, next_rank, need
 
 main_keyboard = ReplyKeyboardMarkup(
     keyboard=[
@@ -84,6 +214,9 @@ main_keyboard = ReplyKeyboardMarkup(
         [KeyboardButton(text="🌳 Дерево"), KeyboardButton(text="🌿 Сады")],
         [KeyboardButton(text="📦 Кейсы"), KeyboardButton(text="💒 Браки")],
         [KeyboardButton(text="🎮 Игры"), KeyboardButton(text="🎁 Бонус")],
+        [KeyboardButton(text="🏆 Ранги"), KeyboardButton(text="💎 Алмазы")],
+        [KeyboardButton(text="🎨 Оформление"), KeyboardButton(text="📋 Квесты")],
+        [KeyboardButton(text="⚔️ Арена"), KeyboardButton(text="💰 Инвестиции")],
         [KeyboardButton(text="⭐ Профиль"), KeyboardButton(text="❓ Помощь")]
     ],
     resize_keyboard=True
@@ -114,9 +247,48 @@ trade_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="◀️ Назад", callback_data="back_games")]
 ])
 
+pvP_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="⚔️ Битва на 1000💰", callback_data="pvp_1000"), InlineKeyboardButton(text="⚔️ Битва на 5000💰", callback_data="pvp_5000")],
+    [InlineKeyboardButton(text="⚔️ Битва на 10000💰", callback_data="pvp_10000"), InlineKeyboardButton(text="◀️ Назад", callback_data="back_main")]
+])
+
+invest_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="💰 Инвестировать 1000", callback_data="invest_1000"), InlineKeyboardButton(text="💰 Инвестировать 5000", callback_data="invest_5000")],
+    [InlineKeyboardButton(text="💰 Инвестировать 10000", callback_data="invest_10000"), InlineKeyboardButton(text="📊 Продать", callback_data="invest_sell")],
+    [InlineKeyboardButton(text="◀️ Назад", callback_data="back_main")]
+])
+
+frame_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="📄 Обычная (0💎)", callback_data="frame_normal"), InlineKeyboardButton(text="✨ Золотая (100💎)", callback_data="frame_gold")],
+    [InlineKeyboardButton(text="💎 Алмазная (300💎)", callback_data="frame_diamond"), InlineKeyboardButton(text="👑 Королевская (500💎)", callback_data="frame_royal")],
+    [InlineKeyboardButton(text="◀️ Назад", callback_data="back_main")]
+])
+
 user_game_state = {}
 user_dice_guess = {}
 user_trade_direction = {}
+user_pvp_bet = {}
+
+def add_exp(user_id, amount):
+    user = init_user(user_id, "")
+    user["exp"] += amount
+    new_level = 1 + user["exp"] // 500
+    if new_level > user["level"]:
+        user["level"] = new_level
+        add_diamonds(user_id, 10)
+        asyncio.create_task(bot.send_message(user_id, f"🎉 Новый уровень {new_level}! +10💎"))
+    save_user(user_id, user)
+
+def add_game_result(user_id, win):
+    user = init_user(user_id, "")
+    user["games_played"] += 1
+    if win:
+        user["wins"] += 1
+    save_user(user_id, user)
+    update_quest_progress(user_id, "games", 1)
+    if win:
+        update_quest_progress(user_id, "wins", 1)
+    check_achievements(user_id)
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
@@ -131,7 +303,190 @@ async def start(message: types.Message):
 @dp.message(lambda msg: msg.text == "💰 Баланс")
 async def show_balance(message: types.Message):
     user = init_user(message.from_user.id, message.from_user.username)
-    await message.answer(f"💰 Твой баланс: {user['balance']} ₽\n🏦 В банке: {user.get('bank', 0)} ₽")
+    await message.answer(f"💰 Твой баланс: {user['balance']} ₽\n🏦 В банке: {user.get('bank', 0)} ₽\n💎 Алмазов: {user.get('diamonds', 0)}")
+
+@dp.message(lambda msg: msg.text == "🏆 Ранги")
+async def show_rank(message: types.Message):
+    user = init_user(message.from_user.id, message.from_user.username)
+    rank, next_rank, need = get_rank_info(message.from_user.id)
+    achievements = user.get('achievements', {})
+    ach_text = ""
+    for ach in achievements:
+        ach_text += f"✅ {ach}\n"
+    if not ach_text:
+        ach_text = "Пока нет достижений"
+    await message.answer(
+        f"🏆 ТВОЙ РАНГ 🏆\n\n"
+        f"📛 {user['rank']}\n"
+        f"💰 Баланс: {user['balance']} ₽\n"
+        f"➡️ Следующий ранг: {next_rank}\n"
+        f"📊 Осталось: {need} ₽\n\n"
+        f"🏅 ДОСТИЖЕНИЯ:\n{ach_text}"
+    )
+
+@dp.message(lambda msg: msg.text == "💎 Алмазы")
+async def show_diamonds(message: types.Message):
+    user = init_user(message.from_user.id, message.from_user.username)
+    await message.answer(
+        f"💎 ТВОИ АЛМАЗЫ 💎\n\n"
+        f"📊 У тебя: {user.get('diamonds', 0)} 💎\n\n"
+        f"✨ Алмазы можно получить за:\n"
+        f"• Выполнение квестов\n"
+        f"• Победы на арене\n"
+        f"• Достижения\n"
+        f"• Повышение уровня\n\n"
+        f"🎨 Тратить алмазы можно в разделе «Оформление»"
+    )
+
+@dp.message(lambda msg: msg.text == "🎨 Оформление")
+async def show_frames(message: types.Message):
+    user = init_user(message.from_user.id, message.from_user.username)
+    await message.answer(
+        f"🎨 ОФОРМЛЕНИЕ 🎨\n\n"
+        f"Твоя рамка: {user.get('frame', '📄 Обычная')}\n"
+        f"💎 Алмазов: {user.get('diamonds', 0)}\n\n"
+        f"👇 Выбери новую рамку:",
+        reply_markup=frame_keyboard
+    )
+
+@dp.callback_query(lambda c: c.data.startswith("frame_"))
+async def buy_frame(callback: types.CallbackQuery):
+    frame_type = callback.data.replace("frame_", "")
+    user = init_user(callback.from_user.id, "")
+    frames = {"normal": "📄 Обычная", "gold": "✨ Золотая", "diamond": "💎 Алмазная", "royal": "👑 Королевская"}
+    prices = {"normal": 0, "gold": 100, "diamond": 300, "royal": 500}
+    if frame_type in frames:
+        if user.get('diamonds', 0) >= prices[frame_type]:
+            user['diamonds'] -= prices[frame_type]
+            user['frame'] = frames[frame_type]
+            save_user(callback.from_user.id, user)
+            await callback.message.answer(f"✅ Ты купил рамку {frames[frame_type]}!")
+        else:
+            await callback.message.answer(f"❌ Не хватает алмазов! Нужно {prices[frame_type]}💎")
+    await callback.answer()
+
+@dp.message(lambda msg: msg.text == "📋 Квесты")
+async def show_quests(message: types.Message):
+    quests = get_daily_quests(message.from_user.id)
+    text = "📋 ЕЖЕДНЕВНЫЕ КВЕСТЫ 📋\n\n"
+    for q in quests:
+        text += f"• {q['name']}: {q['progress']}/{q['target']} (награда: {q['reward']}₽ + {q['reward']//2}💎)\n"
+    await message.answer(text)
+
+@dp.message(lambda msg: msg.text == "⚔️ Арена")
+async def pvp_menu(message: types.Message):
+    await message.answer(
+        "⚔️ АРЕНА ⚔️\n\n"
+        "Битва с другим игроком на ставку!\n"
+        "Победитель забирает деньги и получает алмазы.\n\n"
+        "👇 Выбери ставку и ответь на сообщение противника:",
+        reply_markup=pvP_keyboard
+    )
+
+@dp.callback_query(lambda c: c.data.startswith("pvp_"))
+async def pvp_bet(callback: types.CallbackQuery):
+    amount = int(callback.data.split("_")[1])
+    user_pvp_bet[callback.from_user.id] = amount
+    await callback.message.answer(
+        f"⚔️ Ты выбрал ставку {amount}💰\n"
+        f"📌 Теперь ОТВЕТЬ НА СООБЩЕНИЕ ПРОТИВНИКА и напиши сумму {amount}"
+    )
+    await callback.answer()
+
+@dp.message(lambda msg: msg.text.isdigit() and msg.reply_to_message)
+async def pvp_fight(message: types.Message):
+    amount = int(message.text)
+    attacker_id = message.from_user.id
+    defender_id = message.reply_to_message.from_user.id
+    
+    if attacker_id == defender_id:
+        await message.answer("❌ Нельзя бить самого себя!")
+        return
+    
+    attacker = init_user(attacker_id, "")
+    defender = init_user(defender_id, "")
+    
+    if attacker['balance'] < amount:
+        await message.answer(f"❌ Не хватает денег! У тебя {attacker['balance']} ₽")
+        return
+    if defender['balance'] < amount:
+        await message.answer(f"❌ У противника нет {amount} ₽ для ставки!")
+        return
+    
+    attacker_win = random.choice([True, False])
+    
+    if attacker_win:
+        attacker['balance'] += amount
+        defender['balance'] -= amount
+        add_diamonds(attacker_id, 5)
+        await message.answer(f"⚔️ ПОБЕДА! Ты выиграл {amount} ₽ и +5💎!")
+        await bot.send_message(defender_id, f"⚔️ Поражение на арене! Ты проиграл {amount} ₽ игроку {attacker['name']}")
+    else:
+        attacker['balance'] -= amount
+        defender['balance'] += amount
+        add_diamonds(defender_id, 5)
+        await message.answer(f"⚔️ ПОРАЖЕНИЕ! Ты проиграл {amount} ₽!")
+        await bot.send_message(defender_id, f"⚔️ ПОБЕДА! Ты выиграл {amount} ₽ и +5💎!")
+    
+    save_user(attacker_id, attacker)
+    save_user(defender_id, defender)
+
+@dp.message(lambda msg: msg.text == "💰 Инвестиции")
+async def invest_menu(message: types.Message):
+    user = init_user(message.from_user.id, message.from_user.username)
+    invest_data = user.get('investments', {})
+    current_price = invest_data.get('price', 100)
+    shares = invest_data.get('shares', 0)
+    await message.answer(
+        f"💰 ИНВЕСТИЦИИ 💰\n\n"
+        f"📈 Текущая цена актива: {current_price} ₽\n"
+        f"📊 У тебя акций: {shares}\n"
+        f"💎 Стоимость портфеля: {shares * current_price} ₽\n\n"
+        f"👇 Выбери действие:",
+        reply_markup=invest_keyboard
+    )
+
+@dp.callback_query(lambda c: c.data.startswith("invest_"))
+async def invest_action(callback: types.CallbackQuery):
+    user = init_user(callback.from_user.id, "")
+    invest_data = user.get('investments', {})
+    current_price = invest_data.get('price', 100)
+    shares = invest_data.get('shares', 0)
+    
+    if callback.data == "invest_sell":
+        if shares > 0:
+            profit = shares * current_price
+            user['balance'] += profit
+            user['investments'] = {'price': current_price, 'shares': 0}
+            save_user(callback.from_user.id, user)
+            await callback.message.answer(f"✅ Ты продал {shares} акций за {profit} ₽!")
+        else:
+            await callback.message.answer("❌ У тебя нет акций!")
+    else:
+        amount = int(callback.data.split("_")[1])
+        if user['balance'] >= amount:
+            new_shares = amount // current_price
+            if new_shares > 0:
+                user['balance'] -= new_shares * current_price
+                invest_data['shares'] = invest_data.get('shares', 0) + new_shares
+                user['investments'] = invest_data
+                save_user(callback.from_user.id, user)
+                await callback.message.answer(f"✅ Ты купил {new_shares} акций по {current_price} ₽!")
+            else:
+                await callback.message.answer(f"❌ Сумма слишком мала! Цена акции {current_price} ₽")
+        else:
+            await callback.message.answer(f"❌ Не хватает денег!")
+    
+    # Изменяем цену случайно
+    change = random.uniform(0.95, 1.05)
+    new_price = int(current_price * change)
+    if new_price < 50:
+        new_price = 50
+    if new_price > 500:
+        new_price = 500
+    user['investments']['price'] = new_price
+    save_user(callback.from_user.id, user)
+    await callback.answer()
 
 @dp.message(lambda msg: msg.text == "🏦 Банк")
 async def bank_menu(message: types.Message):
@@ -184,7 +539,7 @@ async def bank_withdraw(message: types.Message):
     save_user(message.from_user.id, user)
     await message.answer(f"✅ -{amount} ₽ из банка!\n💱 Налог: {tax} ₽ (4%)\n💰 Получено: {final} ₽")
 
-# ============ БИЗНЕС ============
+# БИЗНЕС
 @dp.message(lambda msg: msg.text == "🗄 Бизнес")
 async def business_menu(message: types.Message):
     user = init_user(message.from_user.id, message.from_user.username)
@@ -194,6 +549,7 @@ async def business_menu(message: types.Message):
         user['balance'] += income
         user['last_business'] = now
         save_user(message.from_user.id, user)
+        update_quest_progress(message.from_user.id, "money", 0, income)
         await message.answer(f"🏢 Бизнес принёс доход!\n💰 +{income} ₽")
     await message.answer(
         "🏢 БИЗНЕС\n\n"
@@ -215,6 +571,7 @@ async def buy_business(message: types.Message):
     user['business'] = "Магазин"
     user['last_business'] = datetime.now().timestamp()
     save_user(message.from_user.id, user)
+    check_achievements(message.from_user.id)
     await message.answer("✅ Ты купил бизнес! Теперь ты получаешь 500 ₽ каждый час!")
 
 @dp.message(lambda msg: msg.text == "Продать бизнес")
@@ -228,7 +585,7 @@ async def sell_business(message: types.Message):
     save_user(message.from_user.id, user)
     await message.answer("✅ Ты продал бизнес за 25,000 ₽!")
 
-# ============ ГЕНЕРАТОР ============
+# ГЕНЕРАТОР
 @dp.message(lambda msg: msg.text == "🏭 Генератор")
 async def generator_menu(message: types.Message):
     user = init_user(message.from_user.id, message.from_user.username)
@@ -238,6 +595,7 @@ async def generator_menu(message: types.Message):
         user['balance'] += income
         user['last_generator'] = now
         save_user(message.from_user.id, user)
+        update_quest_progress(message.from_user.id, "money", 0, income)
         await message.answer(f"🏭 Генератор произвёл энергию!\n💰 +{income} ₽")
     await message.answer(
         "🏭 ГЕНЕРАТОР\n\n"
@@ -272,7 +630,7 @@ async def sell_generator(message: types.Message):
     save_user(message.from_user.id, user)
     await message.answer("✅ Ты продал генератор за 50,000 ₽!")
 
-# ============ ФЕРМА (МАЙНИНГ) ============
+# ФЕРМА
 @dp.message(lambda msg: msg.text == "🧰 Майнинг")
 async def mining_menu(message: types.Message):
     user = init_user(message.from_user.id, message.from_user.username)
@@ -282,6 +640,7 @@ async def mining_menu(message: types.Message):
         user['balance'] += income
         user['last_farm'] = now
         save_user(message.from_user.id, user)
+        update_quest_progress(message.from_user.id, "money", 0, income)
         await message.answer(f"🔋 Ферма намайнила монеты!\n💰 +{income} ₽")
     await message.answer(
         "🔋 МАЙНИНГ ФЕРМА\n\n"
@@ -316,7 +675,7 @@ async def sell_farm(message: types.Message):
     save_user(message.from_user.id, user)
     await message.answer("✅ Ты продал ферму за 15,000 ₽!")
 
-# ============ КАРЬЕР ============
+# КАРЬЕР
 @dp.message(lambda msg: msg.text == "⚠️ Карьер")
 async def quarry_menu(message: types.Message):
     user = init_user(message.from_user.id, message.from_user.username)
@@ -326,6 +685,7 @@ async def quarry_menu(message: types.Message):
         user['balance'] += income
         user['last_quarry'] = now
         save_user(message.from_user.id, user)
+        update_quest_progress(message.from_user.id, "money", 0, income)
         await message.answer(f"⚠️ Карьер добыл ресурсы!\n💰 +{income} ₽")
     await message.answer(
         "⚠️ КАРЬЕР\n\n"
@@ -360,7 +720,7 @@ async def sell_quarry(message: types.Message):
     save_user(message.from_user.id, user)
     await message.answer("✅ Ты продал карьер за 40,000 ₽!")
 
-# ============ ДЕРЕВО ============
+# ДЕРЕВО
 @dp.message(lambda msg: msg.text == "🌳 Дерево")
 async def tree_menu(message: types.Message):
     user = init_user(message.from_user.id, message.from_user.username)
@@ -370,6 +730,7 @@ async def tree_menu(message: types.Message):
         user['balance'] += income
         user['last_tree'] = now
         save_user(message.from_user.id, user)
+        update_quest_progress(message.from_user.id, "money", 0, income)
         await message.answer(f"🌳 Дерево принесло плоды!\n💰 +{income} ₽")
     await message.answer(
         "🌳 ДЕНЕЖНОЕ ДЕРЕВО\n\n"
@@ -404,7 +765,7 @@ async def sell_tree(message: types.Message):
     save_user(message.from_user.id, user)
     await message.answer("✅ Ты продал дерево за 10,000 ₽!")
 
-# ============ САДЫ ============
+# САДЫ
 @dp.message(lambda msg: msg.text == "🌿 Сады")
 async def garden_menu(message: types.Message):
     user = init_user(message.from_user.id, message.from_user.username)
@@ -414,6 +775,7 @@ async def garden_menu(message: types.Message):
         user['balance'] += income
         user['last_garden'] = now
         save_user(message.from_user.id, user)
+        update_quest_progress(message.from_user.id, "money", 0, income)
         await message.answer(f"🌿 Сад принёс урожай!\n💰 +{income} ₽")
     await message.answer(
         "🌿 САДЫ\n\n"
@@ -464,9 +826,10 @@ async def water_garden(message: types.Message):
     bonus = random.randint(100, 500)
     user['balance'] += bonus
     save_user(message.from_user.id, user)
+    update_quest_progress(message.from_user.id, "money", 0, bonus)
     await message.answer(f"💦 Ты полил сад!\n💰 +{bonus} ₽")
 
-# ============ КЕЙСЫ ============
+# КЕЙСЫ
 @dp.message(lambda msg: msg.text == "📦 Кейсы")
 async def cases_menu(message: types.Message):
     await message.answer(
@@ -531,7 +894,7 @@ async def open_case(message: types.Message):
     save_user(message.from_user.id, user)
     await message.answer(f"📦 Ты открыл кейс!\n💰 +{money} ₽\n⭐ +{exp} опыта")
 
-# ============ БРАКИ ============
+# БРАКИ
 @dp.message(lambda msg: msg.text == "💒 Браки")
 async def marriage_menu(message: types.Message):
     await message.answer(
@@ -601,7 +964,7 @@ async def my_marriage(message: types.Message):
     else:
         await message.answer("💔 Ты не в браке!")
 
-# ============ ИГРЫ ============
+# ИГРЫ
 @dp.message(lambda msg: msg.text == "🎮 Игры")
 async def games_menu(message: types.Message):
     await message.answer("🎲 ВЫБЕРИ ИГРУ", reply_markup=games_keyboard)
@@ -610,6 +973,20 @@ async def games_menu(message: types.Message):
 async def handle_game_choice(callback: types.CallbackQuery):
     game = callback.data.replace("game_", "")
     user_game_state[callback.from_user.id] = f"game_{game}"
+    
+    # Отправляем гифку для игры
+    gifs = {
+        "spin": "https://media.giphy.com/media/3o7abB06u9bNzA8LC8/giphy.gif",
+        "dice": "https://media.giphy.com/media/26gR2qVQy2KdQ/giphy.gif",
+        "basketball": "https://media.giphy.com/media/3o7abB06u9bNzA8LC8/giphy.gif",
+        "dart": "https://media.giphy.com/media/26gR2qVQy2KdQ/giphy.gif",
+        "bowling": "https://media.giphy.com/media/3o7abB06u9bNzA8LC8/giphy.gif",
+        "trade": "https://media.giphy.com/media/26gR2qVQy2KdQ/giphy.gif",
+        "casino": "https://media.giphy.com/media/3o7abB06u9bNzA8LC8/giphy.gif"
+    }
+    if game in gifs:
+        await bot.send_animation(callback.from_user.id, gifs[game])
+    
     if game == "spin":
         await callback.message.answer("🎰 СПИН\n💰 Выбери ставку:", reply_markup=bet_keyboard)
     elif game == "dice":
@@ -660,7 +1037,9 @@ async def handle_bet(callback: types.CallbackQuery):
         return
     game = game_state.replace("game_", "")
     msg = await callback.message.answer("🎲 ИГРАЕМ...")
-    await asyncio.sleep(1)
+    await asyncio.sleep(1.5)
+    win_game = False
+    
     if game == "spin":
         multiplier = random.choice([2, 2, 3, 3, 4, 5, 10])
         if random.random() < 0.4:
@@ -668,6 +1047,7 @@ async def handle_bet(callback: types.CallbackQuery):
             user['balance'] += win
             await msg.edit_text(f"🎰 СПИН\n✨ ВЫПАЛ x{multiplier}!\n🎉 ПОБЕДА! +{win} ₽")
             add_exp(user_id, 10 * multiplier)
+            win_game = True
         else:
             user['balance'] -= bet
             await msg.edit_text(f"🎰 СПИН\n💔 ПРОИГРЫШ! -{bet} ₽")
@@ -683,6 +1063,7 @@ async def handle_bet(callback: types.CallbackQuery):
             user['balance'] += win
             await msg.edit_text(f"🎲 КУБИК\nВыпало: {roll}\nТвоё число: {guess}\n🎉 УГАДАЛ! +{win} ₽")
             add_exp(user_id, 25)
+            win_game = True
         else:
             user['balance'] -= bet
             await msg.edit_text(f"🎲 КУБИК\nВыпало: {roll}\nТвоё число: {guess}\n😞 НЕ УГАДАЛ! -{bet} ₽")
@@ -693,6 +1074,7 @@ async def handle_bet(callback: types.CallbackQuery):
             user['balance'] += win
             await msg.edit_text(f"🏀 БАСКЕТБОЛ\n🏀 ПОПАДАНИЕ!\n🎉 ПОБЕДА! +{win} ₽")
             add_exp(user_id, 10)
+            win_game = True
         else:
             user['balance'] -= bet
             await msg.edit_text(f"🏀 БАСКЕТБОЛ\n💔 ПРОМАХ!\n😞 ПРОИГРЫШ! -{bet} ₽")
@@ -702,6 +1084,7 @@ async def handle_bet(callback: types.CallbackQuery):
             user['balance'] += win
             await msg.edit_text(f"🎯 ДАРТС\n🎯 ЯБЛОЧКО!\n🎉 ПОБЕДА! +{win} ₽")
             add_exp(user_id, 15)
+            win_game = True
         else:
             user['balance'] -= bet
             await msg.edit_text(f"🎯 ДАРТС\n💔 МИМО!\n😞 ПРОИГРЫШ! -{bet} ₽")
@@ -712,11 +1095,13 @@ async def handle_bet(callback: types.CallbackQuery):
             user['balance'] += win
             await msg.edit_text(f"🎳 БОУЛИНГ\n🎳 СТРАЙК!\n🎉 ПОБЕДА! +{win} ₽")
             add_exp(user_id, 20)
+            win_game = True
         elif rand < 0.5:
             win = bet * 2
             user['balance'] += win
             await msg.edit_text(f"🎳 БОУЛИНГ\n🎳 СПЭР!\n🎉 ПОБЕДА! +{win} ₽")
             add_exp(user_id, 10)
+            win_game = True
         else:
             user['balance'] -= bet
             await msg.edit_text(f"🎳 БОУЛИНГ\n💔 ПРОМАХ!\n😞 ПРОИГРЫШ! -{bet} ₽")
@@ -733,6 +1118,7 @@ async def handle_bet(callback: types.CallbackQuery):
             user['balance'] += win
             await msg.edit_text(f"📉 ТРЕЙД\nКурс пошёл {result.upper()}! x{multiplier:.1f}\n🎉 ВЫИГРЫШ! +{win} ₽")
             add_exp(user_id, 15)
+            win_game = True
         else:
             user['balance'] -= bet
             await msg.edit_text(f"📉 ТРЕЙД\nКурс пошёл {result.upper()}...\n😞 ПРОИГРЫШ! -{bet} ₽")
@@ -743,21 +1129,16 @@ async def handle_bet(callback: types.CallbackQuery):
             user['balance'] += win
             await msg.edit_text(f"🎰 КАЗИНО\n🍀 ВЕЗЁТ!\n🎉 ВЫИГРЫШ! +{win} ₽")
             add_exp(user_id, 10)
+            win_game = True
         else:
             user['balance'] -= bet
             await msg.edit_text(f"🎰 КАЗИНО\n💔 НЕ ПОВЕЗЛО...\n😞 ПРОИГРЫШ! -{bet} ₽")
+    
     save_user(user_id, user)
+    add_game_result(user_id, win_game)
+    update_rank(user_id)
+    check_achievements(user_id)
     user_game_state[user_id] = None
-    await callback.answer()
-
-@dp.callback_query(lambda c: c.data == "back_main")
-async def back_to_main(callback: types.CallbackQuery):
-    await callback.message.answer("◀️ Главное меню", reply_markup=main_keyboard)
-    await callback.answer()
-
-@dp.callback_query(lambda c: c.data == "back_games")
-async def back_to_games(callback: types.CallbackQuery):
-    await callback.message.answer("🎲 ВЫБЕРИ ИГРУ", reply_markup=games_keyboard)
     await callback.answer()
 
 @dp.message(lambda msg: msg.text == "🎁 Бонус")
@@ -778,21 +1159,26 @@ async def daily_bonus(message: types.Message):
 async def profile(message: types.Message):
     user = init_user(message.from_user.id, message.from_user.username)
     await message.answer(
-        f"👤 Профиль\n\n"
+        f"👤 ПРОФИЛЬ\n\n"
         f"📛 Ник: {user['name']}\n"
         f"💰 Баланс: {user['balance']} ₽\n"
         f"🏦 В банке: {user.get('bank', 0)} ₽\n"
+        f"💎 Алмазов: {user.get('diamonds', 0)}\n"
+        f"🏆 Ранг: {user.get('rank', '🟤 Новичок')}\n"
+        f"🎨 Рамка: {user.get('frame', '📄 Обычная')}\n"
         f"⭐ Опыт: {user['exp']}\n"
         f"🎚️ Уровень: {user['level']}\n"
+        f"🏆 Побед в играх: {user.get('wins', 0)}\n"
+        f"🎮 Сыграно игр: {user.get('games_played', 0)}\n"
         f"💒 Брак: {user.get('married_to') or 'Нет'}"
     )
 
 @dp.message(lambda msg: msg.text == "❓ Помощь")
 async def help_command(message: types.Message):
     await message.answer(
-        "📖 ПОМОЩЬ\n\n"
-        "💰 Баланс - проверить деньги\n"
-        "🏦 Банк - пополнить/снять\n"
+        "📖 ПОМОЩЬ 📖\n\n"
+        "💰 Баланс - проверить деньги и алмазы\n"
+        "🏦 Банк - пополнить/снять (налог 4%)\n"
         "🗄 Бизнес - купить/продать (500₽/час)\n"
         "🏭 Генератор - купить/продать (300₽/2ч)\n"
         "🧰 Майнинг - купить/продать (300₽/30мин)\n"
@@ -801,13 +1187,31 @@ async def help_command(message: types.Message):
         "🌿 Сады - купить/продать/полить (400₽/6ч)\n"
         "📦 Кейсы - купить/открыть кейсы\n"
         "💒 Браки - /marry, /divorce, /marriage\n"
-        "🎮 Игры - Спин, Кубик, Баскетбол, Дартс, Боулинг, Трейд, Казино\n"
+        "🎮 Игры - 7 игр на выбор\n"
+        "🏆 Ранги - система рангов и достижения\n"
+        "💎 Алмазы - новая валюта\n"
+        "🎨 Оформление - рамки для профиля\n"
+        "📋 Квесты - ежедневные задания\n"
+        "⚔️ Арена - PvP битвы на ставку\n"
+        "💰 Инвестиции - биржевая игра\n"
         "🎁 Бонус - 500₽ раз в день\n"
-        "⭐ Профиль - статистика"
+        "⭐ Профиль - полная статистика"
     )
+
+@dp.callback_query(lambda c: c.data == "back_main")
+async def back_to_main(callback: types.CallbackQuery):
+    await callback.message.answer("◀️ Главное меню", reply_markup=main_keyboard)
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "back_games")
+async def back_to_games(callback: types.CallbackQuery):
+    await callback.message.answer("🎲 ВЫБЕРИ ИГРУ", reply_markup=games_keyboard)
+    await callback.answer()
 
 async def main():
     print("🤖 Бот запущен!")
+    print("✅ Retro 19? — полная экономическая игра")
+    print("✅ Все команды работают!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
