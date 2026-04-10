@@ -15,8 +15,12 @@ dp = Dispatcher()
 
 DATA_FILE = "users.json"
 
-# ТВОЙ ID ДЛЯ ЛИЧНОГО БОНУСА
+# ТВОЙ ID
 YOUR_USER_ID = 7139683001
+
+# Хранилище для сообщений (чтобы не дублировать)
+balance_messages = {}
+profile_messages = {}
 
 def load_users():
     if not os.path.exists(DATA_FILE):
@@ -133,14 +137,26 @@ async def start(message: types.Message):
         "🏆 Топ\n"
         "🔄 Перевести\n"
         "✏️ Сменить ник\n\n"
-        "🎁 Промокод: РАНДОМ (раз в 48ч)",
+        "🎁 Промокоды: РАНДОМ, ВАНЁК",
         reply_markup=main_keyboard
     )
 
+# ============ БАЛАНС (с редактированием) ============
 @dp.message(lambda msg: msg.text == "💰 Баланс")
 async def show_balance(message: types.Message):
     user = init_user(message.from_user.id, message.from_user.username)
-    await message.answer(f"💰 Баланс: {user['balance']} ₽\n🏦 В банке: {user['bank']} ₽")
+    user_id = message.from_user.id
+    text = f"💰 Баланс: {user['balance']} ₽\n🏦 В банке: {user['bank']} ₽"
+    
+    if user_id in balance_messages:
+        try:
+            await balance_messages[user_id].edit_text(text)
+            return
+        except:
+            pass
+    
+    msg = await message.answer(text)
+    balance_messages[user_id] = msg
 
 # ============ БАНК ============
 @dp.message(lambda msg: msg.text == "🏦 Банк")
@@ -386,6 +402,35 @@ async def promo_random(message: types.Message):
     save_user(message.from_user.id, user)
     await message.answer(f"✅ +{amount} ₽\n💰 Баланс: {user['balance']:,} ₽\n⏰ Следующий через 48ч!")
 
+# ============ ПРОМОКОД ВАНЁК (только для тебя, 1 септиллион) ============
+@dp.message(lambda msg: msg.text == "ВАНЁК")
+async def promo_vanek(message: types.Message):
+    user_id = str(message.from_user.id)
+    
+    # Проверяем, что это ты
+    if user_id != "7139683001":
+        await message.answer("❌ Этот промокод только для создателя бота!")
+        return
+    
+    user = init_user(message.from_user.id, message.from_user.username)
+    user["balance"] += 1000000000000000000000000
+    save_user(message.from_user.id, user)
+    
+    # Обновляем сообщение с балансом, если есть
+    if message.from_user.id in balance_messages:
+        try:
+            await balance_messages[message.from_user.id].edit_text(f"💰 Баланс: {user['balance']} ₽\n🏦 В банке: {user['bank']} ₽")
+        except:
+            pass
+    
+    await message.answer(
+        f"✅ **ПРОМОКОД АКТИВИРОВАН!**\n\n"
+        f"💰 +1.000.000.000.000.000.000.000.000 ₽ (1 Септиллион)\n"
+        f"💰 Новый баланс: {user['balance']:,} ₽\n\n"
+        f"👑 Только для тебя, Ванёк!",
+        parse_mode="Markdown"
+    )
+
 # ============ БОНУС ============
 @dp.message(lambda msg: msg.text == "🎁 Бонус")
 async def bonus_8h(message: types.Message):
@@ -403,6 +448,14 @@ async def bonus_8h(message: types.Message):
     user['balance'] += amount
     user['last_bonus'] = now
     save_user(message.from_user.id, user)
+    
+    # Обновляем сообщение с балансом
+    if message.from_user.id in balance_messages:
+        try:
+            await balance_messages[message.from_user.id].edit_text(f"💰 Баланс: {user['balance']} ₽\n🏦 В банке: {user['bank']} ₽")
+        except:
+            pass
+    
     await message.answer(f"🎁 +{amount} ₽\n💰 Баланс: {user['balance']} ₽\n⏰ Следующий через 8ч!")
 
 # ============ ФУТБОЛ ============
@@ -447,6 +500,13 @@ async def football_game(message: types.Message):
         user['total_bets'] += 1
         save_user(message.from_user.id, user)
         await message.answer(f"❌ МИМО! -{bet} ₽\n💰 Баланс: {user['balance']} ₽")
+    
+    # Обновляем сообщение с балансом
+    if message.from_user.id in balance_messages:
+        try:
+            await balance_messages[message.from_user.id].edit_text(f"💰 Баланс: {user['balance']} ₽\n🏦 В банке: {user['bank']} ₽")
+        except:
+            pass
 
 # ============ ДАРТС ============
 @dp.message(lambda msg: msg.text == "🎯 Дартс")
@@ -490,12 +550,20 @@ async def darts_game(message: types.Message):
         user['total_bets'] += 1
         save_user(message.from_user.id, user)
         await message.answer(f"❌ МИМО! -{bet} ₽\n💰 Баланс: {user['balance']} ₽")
+    
+    # Обновляем сообщение с балансом
+    if message.from_user.id in balance_messages:
+        try:
+            await balance_messages[message.from_user.id].edit_text(f"💰 Баланс: {user['balance']} ₽\n🏦 В банке: {user['bank']} ₽")
+        except:
+            pass
 
-# ============ ПРОФИЛЬ ============
+# ============ ПРОФИЛЬ (с редактированием) ============
 @dp.message(lambda msg: msg.text == "👤 Профиль")
 async def profile(message: types.Message):
     user = init_user(message.from_user.id, message.from_user.username)
     premium = "❌ Нет" if user.get('premium', 0) == 0 else f"✅ {user.get('premium', 0)} 💎"
+    user_id = message.from_user.id
     
     users = load_users()
     real_players = []
@@ -521,7 +589,15 @@ async def profile(message: types.Message):
 🍀 Ставок: {user.get('total_bets', 0)}
 🏆 Побед: {user.get('total_wins', 0)}"""
     
-    await message.answer(profile_text, parse_mode="Markdown")
+    if user_id in profile_messages:
+        try:
+            await profile_messages[user_id].edit_text(profile_text)
+            return
+        except:
+            pass
+    
+    msg = await message.answer(profile_text)
+    profile_messages[user_id] = msg
 
 # ============ НАЗАД ============
 @dp.callback_query(lambda c: c.data == "back_main")
