@@ -15,8 +15,8 @@ dp = Dispatcher()
 
 DATA_FILE = "users.json"
 
-# ТВОЙ ID
-YOUR_USER_ID = 7139683001
+# ТВОЙ РЕАЛЬНЫЙ ID
+YOUR_USER_ID = 8464236397
 
 # Хранилище для сообщений (чтобы не дублировать)
 balance_messages = {}
@@ -407,7 +407,8 @@ async def promo_random(message: types.Message):
 async def promo_vanek(message: types.Message):
     user_id = str(message.from_user.id)
     
-    if user_id != "7139683001":
+    # ТВОЙ РЕАЛЬНЫЙ ID
+    if user_id != "8464236397":
         await message.answer("❌ Этот промокод только для создателя бота!")
         return
     
