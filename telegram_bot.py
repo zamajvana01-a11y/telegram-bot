@@ -14,6 +14,7 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 DATA_FILE = "users.json"
+PROMO_FILE = "promo_used.json"
 
 # Хранилище для сообщений
 balance_messages = {}
@@ -28,6 +29,16 @@ def load_users():
 def save_users(users):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(users, f, indent=2, ensure_ascii=False)
+
+def load_promo_status():
+    if os.path.exists(PROMO_FILE):
+        with open(PROMO_FILE, "r") as f:
+            return json.load(f)
+    return {"used": False}
+
+def save_promo_status(status):
+    with open(PROMO_FILE, "w") as f:
+        json.dump(status, f, indent=2)
 
 def init_user(user_id, username):
     users = load_users()
@@ -124,18 +135,22 @@ async def personal_bonus_worker():
 @dp.message(Command("start"))
 async def start(message: types.Message):
     init_user(message.from_user.id, message.from_user.username)
+    promo_status = load_promo_status()
+    
+    # Формируем текст с промокодом, если он ещё не использован
+    promo_text = "\n\n🎁 Промокод: ПРОМО: ВАНЁК (1 септиллион, 1 раз)" if not promo_status.get("used", False) else ""
+    
     await message.answer(
-        "✨ Добро пожаловать!\n\n"
-        "💰 Баланс\n"
-        "🏦 Банк\n"
-        "⚽ Футбол\n"
-        "🎯 Дартс\n"
-        "🎁 Бонус\n"
-        "👤 Профиль\n"
-        "🏆 Топ\n"
-        "🔄 Перевести\n"
-        "✏️ Сменить ник\n\n"
-        "🎁 Промокод: ПРОМО: ВАНЁК",
+        f"✨ Добро пожаловать!\n\n"
+        f"💰 Баланс\n"
+        f"🏦 Банк\n"
+        f"⚽ Футбол\n"
+        f"🎯 Дартс\n"
+        f"🎁 Бонус\n"
+        f"👤 Профиль\n"
+        f"🏆 Топ\n"
+        f"🔄 Перевести\n"
+        f"✏️ Сменить ник{promo_text}",
         reply_markup=main_keyboard
     )
 
@@ -400,9 +415,19 @@ async def promo_random(message: types.Message):
     save_user(message.from_user.id, user)
     await message.answer(f"✅ +{amount} ₽\n💰 Баланс: {user['balance']:,} ₽\n⏰ Следующий через 48ч!")
 
-# ============ ПРОМОКОД ПРОМО: ВАНЁК (работает) ============
+# ============ ПРОМОКОД ПРОМО: ВАНЁК (1 активация) ============
 @dp.message(lambda msg: msg.text == "ПРОМО: ВАНЁК")
 async def promo_vanek(message: types.Message):
+    promo_status = load_promo_status()
+    
+    if promo_status.get("used", False):
+        await message.answer("❌ **ПРОМОКОД УЖЕ ИСПОЛЬЗОВАН!**\n\nКто-то успел раньше...", parse_mode="Markdown")
+        return
+    
+    # Активируем промокод
+    promo_status["used"] = True
+    save_promo_status(promo_status)
+    
     user = init_user(message.from_user.id, message.from_user.username)
     user["balance"] += 1000000000000000000000000
     save_user(message.from_user.id, user)
@@ -418,7 +443,7 @@ async def promo_vanek(message: types.Message):
         f"✅ **ПРОМОКОД АКТИВИРОВАН!**\n\n"
         f"💰 +1.000.000.000.000.000.000.000.000 ₽ (1 Септиллион)\n"
         f"💰 Новый баланс: {user['balance']:,} ₽\n\n"
-        f"👑 Только для тебя, Ванёк!",
+        f"👑 Ты первый и единственный!",
         parse_mode="Markdown"
     )
 
