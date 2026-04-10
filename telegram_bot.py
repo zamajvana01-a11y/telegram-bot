@@ -137,7 +137,7 @@ async def start(message: types.Message):
         "🏆 Топ\n"
         "🔄 Перевести\n"
         "✏️ Сменить ник\n\n"
-        "🎁 Промокоды: РАНДОМ, ВАНЁК",
+        "🎁 Промокоды: РАНДОМ, ПРОМО: ВАНЁК",
         reply_markup=main_keyboard
     )
 
@@ -402,12 +402,11 @@ async def promo_random(message: types.Message):
     save_user(message.from_user.id, user)
     await message.answer(f"✅ +{amount} ₽\n💰 Баланс: {user['balance']:,} ₽\n⏰ Следующий через 48ч!")
 
-# ============ ПРОМОКОД ВАНЁК (только для тебя, 1 септиллион) ============
-@dp.message(lambda msg: msg.text == "ВАНЁК")
+# ============ ПРОМОКОД ПРОМО: ВАНЁК (только для тебя) ============
+@dp.message(lambda msg: msg.text == "ПРОМО: ВАНЁК")
 async def promo_vanek(message: types.Message):
     user_id = str(message.from_user.id)
     
-    # Проверяем, что это ты
     if user_id != "7139683001":
         await message.answer("❌ Этот промокод только для создателя бота!")
         return
@@ -416,7 +415,7 @@ async def promo_vanek(message: types.Message):
     user["balance"] += 1000000000000000000000000
     save_user(message.from_user.id, user)
     
-    # Обновляем сообщение с балансом, если есть
+    # Обновляем сообщение с балансом
     if message.from_user.id in balance_messages:
         try:
             await balance_messages[message.from_user.id].edit_text(f"💰 Баланс: {user['balance']} ₽\n🏦 В банке: {user['bank']} ₽")
