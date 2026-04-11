@@ -4,11 +4,13 @@ import os
 import random
 import time
 import logging
+import asyncpg
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
+# ========== ЛОГГИРОВАНИЕ ==========
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -20,93 +22,86 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TOKEN = "7139683001:AAFpIMrMSENgZwiKLOpYlROymbXJFOjO5oQ"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-
-DATA_FILE = "users.json"
-PROMO_FILE = "promo_used.json"
-PROMO_VANEK_FILE = "promo_vanek_used.json"
 
 YOUR_USER_ID = 8464236397
 
 balance_messages = {}
 profile_messages = {}
 
-def load_users():
-    try:
-        if not os.path.exists(DATA_FILE):
-            return {}
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error(f"Ошибка загрузки users.json: {e}")
-        return {}
+# ========== БАЗА ДАННЫХ ==========
+async def init_db():
+    conn = await asyncpg.connect(DATABASE_URL)
+    await conn.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id BIGINT PRIMARY KEY,
+            name TEXT DEFAULT 'Игрок',
+            balance BIGINT DEFAULT 5000,
+            bank BIGINT DEFAULT 0,
+            bank_level INT DEFAULT 1,
+            limit_level INT DEFAULT 1,
+            last_bonus BIGINT DEFAULT 0,
+            last_promo BIGINT DEFAULT 0,
+            total_bets INT DEFAULT 0,
+            total_wins INT DEFAULT 0,
+            invited INT DEFAULT 0,
+            premium INT DEFAULT 0
+        )
+    ''')
+    await conn.execute('''
+        CREATE TABLE IF NOT EXISTS promos (
+            name TEXT PRIMARY KEY,
+            used BOOLEAN DEFAULT FALSE
+        )
+    ''')
+    # Добавляем промокоды если их нет
+    await conn.execute('''
+        INSERT INTO promos (name, used) VALUES ('PROMO_VANEK', FALSE)
+        ON CONFLICT (name) DO NOTHING
+    ''')
+    await conn.execute('''
+        INSERT INTO promos (name, used) VALUES ('VANEK_100B', FALSE)
+        ON CONFLICT (name) DO NOTHING
+    ''')
+    await conn.close()
+    logger.info("✅ База данных готова")
 
-def save_users(users):
-    try:
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(users, f, indent=2, ensure_ascii=False)
-    except Exception as e:
-        logger.error(f"Ошибка сохранения users.json: {e}")
+async def get_user(user_id):
+    conn = await asyncpg.connect(DATABASE_URL)
+    row = await conn.fetchrow('SELECT * FROM users WHERE user_id = $1', user_id)
+    if not row:
+        await conn.execute('''
+            INSERT INTO users (user_id, balance) VALUES ($1, 5000)
+        ''', user_id)
+        row = await conn.fetchrow('SELECT * FROM users WHERE user_id = $1', user_id)
+    await conn.close()
+    return dict(row)
 
-def load_promo_status():
-    try:
-        if os.path.exists(PROMO_FILE):
-            with open(PROMO_FILE, "r") as f:
-                return json.load(f)
-    except Exception as e:
-        logger.error(f"Ошибка загрузки promo_used.json: {e}")
-    return {"used": False}
+async def update_user(user_id, **kwargs):
+    conn = await asyncpg.connect(DATABASE_URL)
+    for key, value in kwargs.items():
+        await conn.execute(f'UPDATE users SET {key} = $1 WHERE user_id = $2', value, user_id)
+    await conn.close()
 
-def save_promo_status(status):
-    try:
-        with open(PROMO_FILE, "w") as f:
-            json.dump(status, f, indent=2)
-    except Exception as e:
-        logger.error(f"Ошибка сохранения promo_used.json: {e}")
+async def get_all_users():
+    conn = await asyncpg.connect(DATABASE_URL)
+    rows = await conn.fetch('SELECT * FROM users')
+    await conn.close()
+    return [dict(row) for row in rows]
 
-def load_promo_vanek_status():
-    try:
-        if os.path.exists(PROMO_VANEK_FILE):
-            with open(PROMO_VANEK_FILE, "r") as f:
-                return json.load(f)
-    except Exception as e:
-        logger.error(f"Ошибка загрузки promo_vanek_used.json: {e}")
-    return {"used": False}
+async def get_promo(name):
+    conn = await asyncpg.connect(DATABASE_URL)
+    row = await conn.fetchrow("SELECT * FROM promos WHERE name = $1", name)
+    await conn.close()
+    return dict(row) if row else {"used": False}
 
-def save_promo_vanek_status(status):
-    try:
-        with open(PROMO_VANEK_FILE, "w") as f:
-            json.dump(status, f, indent=2)
-    except Exception as e:
-        logger.error(f"Ошибка сохранения promo_vanek_used.json: {e}")
-
-def init_user(user_id, username):
-    users = load_users()
-    user_id = str(user_id)
-    if user_id not in users:
-        users[user_id] = {
-            "id": user_id,
-            "name": username or f"Игрок{user_id}",
-            "balance": 5000,
-            "bank": 0,
-            "bank_level": 1,
-            "limit_level": 1,
-            "last_bonus": 0,
-            "last_promo": 0,
-            "total_bets": 0,
-            "total_wins": 0,
-            "invited": 0,
-            "premium": 0
-        }
-        save_users(users)
-    return users[user_id]
-
-def save_user(user_id, data):
-    users = load_users()
-    users[str(user_id)] = data
-    save_users(users)
+async def set_promo_used(name):
+    conn = await asyncpg.connect(DATABASE_URL)
+    await conn.execute("UPDATE promos SET used = TRUE WHERE name = $1", name)
+    await conn.close()
 
 def get_bank_percent(level):
     return round(0.1 + (level - 1) * 0.05, 2)
@@ -141,51 +136,50 @@ limit_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="◀️ Назад", callback_data="back_main")]
 ])
 
+# ========== ФОНОВЫЕ ЗАДАЧИ ==========
 async def bank_profit_worker():
+    await asyncio.sleep(10)
     while True:
         try:
             await asyncio.sleep(3600)
-            users = load_users()
-            for user_id, data in users.items():
+            users = await get_all_users()
+            for user in users:
                 try:
-                    if data.get('bank', 0) > 0:
-                        percent = get_bank_percent(data.get('bank_level', 1))
-                        profit = int(data['bank'] * percent / 100)
+                    if user.get('bank', 0) > 0:
+                        percent = get_bank_percent(user.get('bank_level', 1))
+                        profit = int(user['bank'] * percent / 100)
                         if profit > 0:
-                            data['bank'] += profit
-                            save_user(int(user_id), data)
+                            await update_user(user['user_id'], bank=user['bank'] + profit)
                             try:
                                 await bot.send_message(
-                                    int(user_id), 
-                                    f"🏦 **Вам пришло: {profit} ₽**\n📊 Процент: {percent}% | Уровень банка: {data.get('bank_level', 1)}", 
+                                    user['user_id'],
+                                    f"🏦 **Вам пришло: {profit} ₽**\n📊 Процент: {percent}% | Уровень банка: {user.get('bank_level', 1)}",
                                     parse_mode="Markdown"
                                 )
-                            except Exception as send_err:
-                                logger.warning(f"Не смог отправить сообщение {user_id}: {send_err}")
-                except Exception as user_err:
-                    logger.error(f"Ошибка обработки пользователя {user_id} в bank_profit: {user_err}")
+                            except:
+                                pass
+                except Exception as e:
+                    logger.error(f"Ошибка в bank_profit для {user.get('user_id')}: {e}")
             logger.info("✅ Проценты на банк начислены")
         except Exception as e:
             logger.error(f"КРИТИЧЕСКАЯ ошибка в bank_profit_worker: {e}")
             await asyncio.sleep(10)
 
 async def personal_bonus_worker():
+    await asyncio.sleep(5)
     while True:
         try:
             await asyncio.sleep(7200)
-            users = load_users()
-            for user_id, data in users.items():
-                if int(user_id) == YOUR_USER_ID:
-                    data['balance'] += 100000000
-                    save_user(int(user_id), data)
-                    try:
-                        await bot.send_message(
-                            YOUR_USER_ID, 
-                            f"🎁 **ЛИЧНЫЙ БОНУС!**\n💰 +100.000.000 ₽\n⏰ Следующий через 2 часа!", 
-                            parse_mode="Markdown"
-                        )
-                    except Exception as send_err:
-                        logger.warning(f"Не смог отправить личный бонус: {send_err}")
+            user = await get_user(YOUR_USER_ID)
+            await update_user(YOUR_USER_ID, balance=user['balance'] + 100000000)
+            try:
+                await bot.send_message(
+                    YOUR_USER_ID,
+                    f"🎁 **ЛИЧНЫЙ БОНУС!**\n💰 +100.000.000 ₽\n⏰ Следующий через 2 часа!",
+                    parse_mode="Markdown"
+                )
+            except:
+                pass
             logger.info("✅ Личный бонус начислен")
         except Exception as e:
             logger.error(f"КРИТИЧЕСКАЯ ошибка в personal_bonus_worker: {e}")
@@ -197,13 +191,12 @@ async def cleanup_old_messages():
             await asyncio.sleep(3600)
             if len(balance_messages) > 1000:
                 balance_messages.clear()
-                logger.info("🧹 Очищен словарь balance_messages")
             if len(profile_messages) > 1000:
                 profile_messages.clear()
-                logger.info("🧹 Очищен словарь profile_messages")
         except Exception as e:
             logger.error(f"Ошибка в cleanup_old_messages: {e}")
 
+# ========== КОМАНДЫ ==========
 @dp.message(Command("id"))
 async def show_id(message: types.Message):
     try:
@@ -212,110 +205,61 @@ async def show_id(message: types.Message):
         first_name = message.from_user.first_name or ""
         last_name = message.from_user.last_name or ""
         full_name = f"{first_name} {last_name}".strip()
-        
         await message.answer(
-            f"🆔 **ТВОЙ ID**\n\n"
-            f"📛 Имя: {full_name}\n"
-            f"👤 Username: @{username}\n"
-            f"🔢 ID: `{user_id}`\n\n"
-            f"💡 Этот ID уникален для каждого аккаунта Telegram.",
+            f"🆔 **ТВОЙ ID**\n\n📛 Имя: {full_name}\n👤 Username: @{username}\n🔢 ID: `{user_id}`",
             parse_mode="Markdown"
         )
     except Exception as e:
         logger.error(f"Ошибка в /id: {e}")
-        await message.answer("❌ Произошла ошибка")
 
 @dp.message(Command("clear_duplicates"))
 async def clear_duplicates(message: types.Message):
-    try:
-        user_id = message.from_user.id
-        if user_id != YOUR_USER_ID:
-            await message.answer("❌ Только для создателя бота!")
-            return
-        
-        users = load_users()
-        name_map = {}
-        to_delete = []
-        
-        for uid, data in users.items():
-            name = data.get('name')
-            if name in name_map:
-                old_uid = name_map[name]
-                if data.get('balance', 0) > users[old_uid].get('balance', 0):
-                    to_delete.append(old_uid)
-                    name_map[name] = uid
-                else:
-                    to_delete.append(uid)
-            else:
-                name_map[name] = uid
-        
-        for uid in to_delete:
-            del users[uid]
-        
-        save_users(users)
-        await message.answer(f"✅ Удалено {len(to_delete)} дубликатов аккаунтов!\n📊 Теперь у каждого игрока уникальный ник.")
-    except Exception as e:
-        logger.error(f"Ошибка в /clear_duplicates: {e}")
-        await message.answer("❌ Произошла ошибка")
+    if message.from_user.id != YOUR_USER_ID:
+        await message.answer("❌ Только для создателя бота!")
+        return
+    await message.answer("✅ База данных сама не допускает дубликатов!")
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
     try:
-        init_user(message.from_user.id, message.from_user.username)
-        promo_status = load_promo_status()
-        promo_vanek_status = load_promo_vanek_status()
-        
+        await get_user(message.from_user.id)
+        promo_vanek = await get_promo('PROMO_VANEK')
+        promo_vanek_100b = await get_promo('VANEK_100B')
         promo_text = ""
-        if not promo_status.get("used", False):
+        if not promo_vanek.get('used', False):
             promo_text += "\n\n🎁 Промокод: ПРОМО: ВАНЁК (1 септиллион, 1 раз)"
-        if not promo_vanek_status.get("used", False):
+        if not promo_vanek_100b.get('used', False):
             promo_text += "\n\n🔥 Промокод: Ванёк (100 миллиардов, 1 раз)"
-        
         await message.answer(
-            f"✨ Добро пожаловать!\n\n"
-            f"💰 Баланс\n"
-            f"🏦 Банк\n"
-            f"⚽ Футбол\n"
-            f"🎯 Дартс\n"
-            f"🎁 Бонус\n"
-            f"👤 Профиль\n"
-            f"🏆 Топ\n"
-            f"🔄 Перевести\n"
-            f"✏️ Сменить ник{promo_text}\n\n"
-            f"📌 Команды: /id, /clear_duplicates",
+            f"✨ Добро пожаловать!\n\n💰 Баланс\n🏦 Банк\n⚽ Футбол\n🎯 Дартс\n🎁 Бонус\n👤 Профиль\n🏆 Топ\n🔄 Перевести\n✏️ Сменить ник{promo_text}",
             reply_markup=main_keyboard
         )
     except Exception as e:
         logger.error(f"Ошибка в /start: {e}")
-        await message.answer("❌ Произошла ошибка при запуске")
 
 @dp.message(lambda msg: msg.text == "💰 Баланс")
 async def show_balance(message: types.Message):
     try:
-        user = init_user(message.from_user.id, message.from_user.username)
-        user_id = message.from_user.id
+        user = await get_user(message.from_user.id)
         text = f"💰 Баланс: {user['balance']} ₽\n🏦 В банке: {user['bank']} ₽"
-        
-        if user_id in balance_messages:
+        if message.from_user.id in balance_messages:
             try:
-                await balance_messages[user_id].edit_text(text)
+                await balance_messages[message.from_user.id].edit_text(text)
                 return
             except:
                 pass
-        
         msg = await message.answer(text)
-        balance_messages[user_id] = msg
+        balance_messages[message.from_user.id] = msg
     except Exception as e:
         logger.error(f"Ошибка в Баланс: {e}")
 
 @dp.message(lambda msg: msg.text == "🏦 Банк")
 async def bank_menu(message: types.Message):
     try:
-        user = init_user(message.from_user.id, message.from_user.username)
+        user = await get_user(message.from_user.id)
         name = user.get('name', 'Игрок')
         percent = get_bank_percent(user['bank_level'])
         upgrade_cost = get_bank_upgrade_cost(user['bank_level'])
-        
         bank_text = f"""👨🏼‍✈️ {name}: /bank
 
 Бот для развлечения 🥃
@@ -328,7 +272,6 @@ async def bank_menu(message: types.Message):
 
 ━━━━━━━━━━━━━━━
 📈 Прокачка: {upgrade_cost} ₽"""
-        
         await message.answer(bank_text, parse_mode="Markdown", reply_markup=bank_keyboard)
     except Exception as e:
         logger.error(f"Ошибка в Банк: {e}")
@@ -336,24 +279,19 @@ async def bank_menu(message: types.Message):
 @dp.callback_query(lambda c: c.data == "upgrade_bank")
 async def upgrade_bank(callback: types.CallbackQuery):
     try:
-        user = init_user(callback.from_user.id, callback.from_user.username)
+        user = await get_user(callback.from_user.id)
         cost = get_bank_upgrade_cost(user['bank_level'])
-        
         if user['balance'] >= cost:
-            user['balance'] -= cost
-            user['bank_level'] += 1
-            save_user(callback.from_user.id, user)
-            new_percent = get_bank_percent(user['bank_level'])
-            next_cost = get_bank_upgrade_cost(user['bank_level'])
-            
-            await callback.message.answer(f"✅ Банк прокачан!\n📈 Уровень: {user['bank_level']}\n📊 Процент: {new_percent}%\n💰 Следующая прокачка: {next_cost} ₽")
+            await update_user(callback.from_user.id, balance=user['balance'] - cost, bank_level=user['bank_level'] + 1)
+            new_percent = get_bank_percent(user['bank_level'] + 1)
+            next_cost = get_bank_upgrade_cost(user['bank_level'] + 1)
+            await callback.message.answer(f"✅ Банк прокачан!\n📈 Уровень: {user['bank_level'] + 1}\n📊 Процент: {new_percent}%\n💰 Следующая прокачка: {next_cost} ₽")
         else:
             need = cost - user['balance']
             await callback.message.answer(f"❌ Не хватает на прокачку!\n💰 Нужно: {cost} ₽\n💵 У тебя: {user['balance']} ₽\n💸 Не хватает: {need} ₽")
         await callback.answer()
     except Exception as e:
         logger.error(f"Ошибка в upgrade_bank: {e}")
-        await callback.answer("❌ Ошибка", show_alert=True)
 
 @dp.message(lambda msg: msg.text.startswith("!банкввод"))
 async def bank_deposit(message: types.Message):
@@ -366,14 +304,12 @@ async def bank_deposit(message: types.Message):
         if amount < 1:
             await message.answer("❌ Минимум 1 ₽")
             return
-        user = init_user(message.from_user.id, message.from_user.username)
+        user = await get_user(message.from_user.id)
         if user['balance'] < amount:
             await message.answer(f"❌ Не хватает! У тебя {user['balance']} ₽")
             return
-        user['balance'] -= amount
-        user['bank'] += amount
-        save_user(message.from_user.id, user)
-        await message.answer(f"✅ +{amount} ₽ в банк!\n💰 На руках: {user['balance']} ₽\n🏦 В банке: {user['bank']} ₽")
+        await update_user(message.from_user.id, balance=user['balance'] - amount, bank=user['bank'] + amount)
+        await message.answer(f"✅ +{amount} ₽ в банк!\n💰 На руках: {user['balance'] - amount} ₽\n🏦 В банке: {user['bank'] + amount} ₽")
     except ValueError:
         await message.answer("❌ Введи число!")
     except Exception as e:
@@ -390,15 +326,13 @@ async def bank_withdraw(message: types.Message):
         if amount < 1:
             await message.answer("❌ Минимум 1 ₽")
             return
-        user = init_user(message.from_user.id, message.from_user.username)
+        user = await get_user(message.from_user.id)
         if user['bank'] < amount:
             await message.answer(f"❌ В банке только {user['bank']} ₽")
             return
         tax = int(amount * 0.04)
         final = amount - tax
-        user['bank'] -= amount
-        user['balance'] += final
-        save_user(message.from_user.id, user)
+        await update_user(message.from_user.id, bank=user['bank'] - amount, balance=user['balance'] + final)
         await message.answer(f"✅ -{amount} ₽ из банка!\n💱 Налог: {tax} ₽ (4%)\n💰 Получено: {final} ₽")
     except ValueError:
         await message.answer("❌ Введи число!")
@@ -408,29 +342,14 @@ async def bank_withdraw(message: types.Message):
 @dp.message(lambda msg: msg.text == "🏆 Топ")
 async def top_players(message: types.Message):
     try:
-        users = load_users()
-        real_players = []
-        for uid, data in users.items():
-            if data.get('total_bets', 0) > 0 or data.get('balance', 0) > 5000:
-                real_players.append({
-                    "name": data.get('name', f"Игрок{uid[:4]}"),
-                    "balance": data.get('balance', 0)
-                })
-        
+        users = await get_all_users()
+        real_players = [{"name": u.get('name', f"Игрок{u['user_id']}"), "balance": u.get('balance', 0)} for u in users if u.get('total_bets', 0) > 0 or u.get('balance', 0) > 5000]
         real_players.sort(key=lambda x: x['balance'], reverse=True)
-        
         top_text = "🏆 ТОП ИГРОКОВ 🏆\n\n"
         for i, player in enumerate(real_players[:10], 1):
             top_text += f"{i}. {player['name']} — {player['balance']:,} ₽\n"
-        
-        user_id = str(message.from_user.id)
-        user_balance = init_user(message.from_user.id, message.from_user.username).get('balance', 0)
-        position = 1
-        for i, player in enumerate(real_players, 1):
-            if player['balance'] == user_balance:
-                position = i
-                break
-        
+        user = await get_user(message.from_user.id)
+        position = sum(1 for p in real_players if p['balance'] > user['balance']) + 1
         top_text += f"\n📊 Ваше место в топе: {position}"
         await message.answer(top_text, parse_mode="Markdown")
     except Exception as e:
@@ -439,16 +358,11 @@ async def top_players(message: types.Message):
 @dp.message(lambda msg: msg.text == "🔄 Перевести")
 async def transfer_menu(message: types.Message):
     try:
-        user = init_user(message.from_user.id, message.from_user.username)
+        user = await get_user(message.from_user.id)
         max_transfer = get_max_transfer(user.get('limit_level', 1))
         upgrade_cost = get_limit_upgrade_cost(user.get('limit_level', 1))
-        
         await message.answer(
-            f"🔄 ПЕРЕВОД ДЕНЕГ\n\n"
-            f"📊 Макс. перевод: {max_transfer} ₽\n"
-            f"🏦 Уровень лимита: {user.get('limit_level', 1)}\n\n"
-            f"📝 перевод @username 1000\n\n"
-            f"📈 Прокачка лимита: {upgrade_cost} ₽",
+            f"🔄 ПЕРЕВОД ДЕНЕГ\n\n📊 Макс. перевод: {max_transfer} ₽\n🏦 Уровень лимита: {user.get('limit_level', 1)}\n\n📝 перевод @username 1000\n\n📈 Прокачка лимита: {upgrade_cost} ₽",
             reply_markup=limit_keyboard
         )
     except Exception as e:
@@ -457,24 +371,19 @@ async def transfer_menu(message: types.Message):
 @dp.callback_query(lambda c: c.data == "upgrade_limit")
 async def upgrade_limit(callback: types.CallbackQuery):
     try:
-        user = init_user(callback.from_user.id, callback.from_user.username)
+        user = await get_user(callback.from_user.id)
         cost = get_limit_upgrade_cost(user.get('limit_level', 1))
-        
         if user['balance'] >= cost:
-            user['balance'] -= cost
-            user['limit_level'] = user.get('limit_level', 1) + 1
-            save_user(callback.from_user.id, user)
-            new_max = get_max_transfer(user['limit_level'])
-            next_cost = get_limit_upgrade_cost(user['limit_level'])
-            
-            await callback.message.answer(f"✅ Лимит повышен!\n📈 Уровень: {user['limit_level']}\n💰 Макс. перевод: {new_max} ₽\n💸 Следующая прокачка: {next_cost} ₽")
+            await update_user(callback.from_user.id, balance=user['balance'] - cost, limit_level=user.get('limit_level', 1) + 1)
+            new_max = get_max_transfer(user.get('limit_level', 1) + 1)
+            next_cost = get_limit_upgrade_cost(user.get('limit_level', 1) + 1)
+            await callback.message.answer(f"✅ Лимит повышен!\n📈 Уровень: {user.get('limit_level', 1) + 1}\n💰 Макс. перевод: {new_max} ₽\n💸 Следующая прокачка: {next_cost} ₽")
         else:
             need = cost - user['balance']
             await callback.message.answer(f"❌ Не хватает на прокачку!\n💰 Нужно: {cost} ₽\n💵 У тебя: {user['balance']} ₽\n💸 Не хватает: {need} ₽")
         await callback.answer()
     except Exception as e:
         logger.error(f"Ошибка в upgrade_limit: {e}")
-        await callback.answer("❌ Ошибка", show_alert=True)
 
 @dp.message(lambda msg: msg.text.startswith("перевод"))
 async def transfer_money(message: types.Message):
@@ -483,55 +392,25 @@ async def transfer_money(message: types.Message):
         if len(parts) < 3:
             await message.answer("❌ Пример: перевод @username 1000")
             return
-        
         target = parts[1].replace("@", "")
         amount = int(parts[2])
-        
-        user = init_user(message.from_user.id, message.from_user.username)
+        user = await get_user(message.from_user.id)
         max_transfer = get_max_transfer(user.get('limit_level', 1))
-        
-        if amount < 1:
-            await message.answer("❌ Минимум 1 ₽")
+        if amount < 1 or amount > max_transfer or amount > user['balance']:
+            await message.answer(f"❌ Ошибка суммы!")
             return
-        if amount > max_transfer:
-            await message.answer(f"❌ Макс. перевод: {max_transfer} ₽\n📈 Повысь лимит!")
+        users = await get_all_users()
+        target_user = next((u for u in users if u.get('name', '').lower() == target.lower()), None)
+        if not target_user or target_user['user_id'] == message.from_user.id:
+            await message.answer("❌ Игрок не найден или это вы!")
             return
-        if amount > user['balance']:
-            await message.answer(f"❌ Не хватает! Баланс: {user['balance']} ₽")
-            return
-        
-        users = load_users()
-        target_id = None
-        target_name = None
-        for uid, data in users.items():
-            if data.get('name', '').lower() == target.lower():
-                target_id = uid
-                target_name = data.get('name')
-                break
-        
-        if not target_id:
-            await message.answer(f"❌ Игрок {target} не найден!")
-            return
-        
-        if target_id == str(message.from_user.id):
-            await message.answer("❌ Нельзя перевести себе!")
-            return
-        
-        user['balance'] -= amount
-        save_user(message.from_user.id, user)
-        
-        target_user = init_user(target_id, target_name)
-        target_user['balance'] += amount
-        save_user(target_id, target_user)
-        
-        await message.answer(f"✅ Перевод {amount} ₽ -> {target_name}\n💰 Твой баланс: {user['balance']} ₽")
-        
+        await update_user(message.from_user.id, balance=user['balance'] - amount)
+        await update_user(target_user['user_id'], balance=target_user['balance'] + amount)
+        await message.answer(f"✅ Перевод {amount} ₽ -> {target_user['name']}")
         try:
-            await bot.send_message(int(target_id), f"✅ Вам перевели {amount} ₽ от {user['name']}\n💰 Баланс: {target_user['balance']} ₽")
+            await bot.send_message(target_user['user_id'], f"✅ Вам перевели {amount} ₽ от {user['name']}")
         except:
             pass
-    except ValueError:
-        await message.answer("❌ Введи сумму числом!")
     except Exception as e:
         logger.error(f"Ошибка в перевод: {e}")
 
@@ -547,104 +426,66 @@ async def set_nickname(message: types.Message):
             await message.answer("❌ Пример: /setnik Ванёк")
             return
         new_nick = parts[1][:20]
-        user = init_user(message.from_user.id, message.from_user.username)
-        old_nick = user['name']
-        user['name'] = new_nick
-        save_user(message.from_user.id, user)
-        await message.answer(f"✅ Ник изменён!\n👤 Старый: {old_nick}\n👤 Новый: {new_nick}")
+        await update_user(message.from_user.id, name=new_nick)
+        await message.answer(f"✅ Ник изменён на {new_nick}!")
     except Exception as e:
         logger.error(f"Ошибка в /setnik: {e}")
 
 @dp.message(lambda msg: msg.text == "РАНДОМ")
 async def promo_random(message: types.Message):
     try:
-        user = init_user(message.from_user.id, message.from_user.username)
-        last_promo = user.get("last_promo", 0)
+        user = await get_user(message.from_user.id)
         now = time.time()
-        
-        if now - last_promo < 172800:
-            left = int(48 - (now - last_promo) // 3600)
+        if now - user.get('last_promo', 0) < 172800:
+            left = int(48 - (now - user.get('last_promo', 0)) // 3600)
             await message.answer(f"⏰ Промокод через {left} часов!")
             return
-        
         amount = random.randint(44444, 122222)
-        user["balance"] += amount
-        user["last_promo"] = now
-        save_user(message.from_user.id, user)
-        await message.answer(f"✅ +{amount} ₽\n💰 Баланс: {user['balance']:,} ₽\n⏰ Следующий через 48ч!")
+        await update_user(message.from_user.id, balance=user['balance'] + amount, last_promo=int(now))
+        await message.answer(f"✅ +{amount} ₽\n💰 Баланс: {user['balance'] + amount:,} ₽")
     except Exception as e:
         logger.error(f"Ошибка в РАНДОМ: {e}")
 
 @dp.message(lambda msg: msg.text == "ПРОМО: ВАНЁК")
 async def promo_vanek(message: types.Message):
     try:
-        promo_status = load_promo_status()
-        
-        if promo_status.get("used", False):
-            await message.answer("❌ **ПРОМОКОД УЖЕ ИСПОЛЬЗОВАН!**\n\nКто-то успел раньше...", parse_mode="Markdown")
+        promo = await get_promo('PROMO_VANEK')
+        if promo.get('used', False):
+            await message.answer("❌ Промокод уже использован!")
             return
-        
-        promo_status["used"] = True
-        save_promo_status(promo_status)
-        
-        user = init_user(message.from_user.id, message.from_user.username)
-        user["balance"] += 1000000000000000000000000
-        save_user(message.from_user.id, user)
-        
-        await message.answer(
-            f"✅ **ПРОМОКОД АКТИВИРОВАН!**\n\n"
-            f"💰 +1.000.000.000.000.000.000.000.000 ₽ (1 Септиллион)\n"
-            f"💰 Новый баланс: {user['balance']:,} ₽\n\n"
-            f"👑 Ты первый и единственный!",
-            parse_mode="Markdown"
-        )
+        await set_promo_used('PROMO_VANEK')
+        user = await get_user(message.from_user.id)
+        await update_user(message.from_user.id, balance=user['balance'] + 1000000000000000000000000)
+        await message.answer(f"✅ +1 Септиллион ₽!\n👑 Ты первый!")
     except Exception as e:
         logger.error(f"Ошибка в ПРОМО: ВАНЁК: {e}")
 
 @dp.message(lambda msg: msg.text == "Ванёк")
 async def promo_vanek_100b(message: types.Message):
     try:
-        promo_vanek_status = load_promo_vanek_status()
-        
-        if promo_vanek_status.get("used", False):
-            await message.answer("❌ **ПРОМОКОД УЖЕ ИСПОЛЬЗОВАН!**\n\nКто-то успел раньше...", parse_mode="Markdown")
+        promo = await get_promo('VANEK_100B')
+        if promo.get('used', False):
+            await message.answer("❌ Промокод уже использован!")
             return
-        
-        promo_vanek_status["used"] = True
-        save_promo_vanek_status(promo_vanek_status)
-        
-        user = init_user(message.from_user.id, message.from_user.username)
-        user["balance"] += 100000000000
-        save_user(message.from_user.id, user)
-        
-        await message.answer(
-            f"✅ **ПРОМОКОД АКТИВИРОВАН!**\n\n"
-            f"💰 +100.000.000.000 ₽ (100 Миллиардов)\n"
-            f"💰 Новый баланс: {user['balance']:,} ₽\n\n"
-            f"🔥 Ты успел первым!",
-            parse_mode="Markdown"
-        )
+        await set_promo_used('VANEK_100B')
+        user = await get_user(message.from_user.id)
+        await update_user(message.from_user.id, balance=user['balance'] + 100000000000)
+        await message.answer(f"✅ +100 Миллиардов ₽!\n🔥 Ты успел первым!")
     except Exception as e:
         logger.error(f"Ошибка в Ванёк: {e}")
 
 @dp.message(lambda msg: msg.text == "🎁 Бонус")
 async def bonus_8h(message: types.Message):
     try:
-        user = init_user(message.from_user.id, message.from_user.username)
+        user = await get_user(message.from_user.id)
         now = time.time()
-        last_bonus = user.get("last_bonus", 0)
-        
-        if now - last_bonus < 28800:
-            left_hours = int(8 - (now - last_bonus) // 3600)
-            left_minutes = int(60 - ((now - last_bonus) % 3600) // 60)
-            await message.answer(f"⏰ Бонус через {left_hours}ч {left_minutes}мин!")
+        if now - user.get('last_bonus', 0) < 28800:
+            left = int(8 - (now - user.get('last_bonus', 0)) // 3600)
+            await message.answer(f"⏰ Бонус через {left} часов!")
             return
-        
         amount = random.randint(2500, 9000)
-        user['balance'] += amount
-        user['last_bonus'] = now
-        save_user(message.from_user.id, user)
-        await message.answer(f"🎁 +{amount} ₽\n💰 Баланс: {user['balance']} ₽\n⏰ Следующий через 8ч!")
+        await update_user(message.from_user.id, balance=user['balance'] + amount, last_bonus=int(now))
+        await message.answer(f"🎁 +{amount} ₽\n💰 Баланс: {user['balance'] + amount} ₽")
     except Exception as e:
         logger.error(f"Ошибка в Бонус: {e}")
 
@@ -657,37 +498,22 @@ async def football_game(message: types.Message):
     try:
         parts = message.text.split()
         if len(parts) < 2:
-            await message.answer("❌ Пример: !ф 100")
             return
         bet = int(parts[1])
-        
-        user = init_user(message.from_user.id, message.from_user.username)
-        
-        if bet < 1:
-            await message.answer("❌ Минимум 1 ₽")
+        user = await get_user(message.from_user.id)
+        if bet < 1 or bet > user['balance']:
+            await message.answer("❌ Неверная сумма!")
             return
-        if bet > user['balance']:
-            await message.answer(f"❌ Не хватает! Баланс: {user['balance']} ₽")
-            return
-        
         win = random.random() < 0.45
         await message.answer("⚽ Удар...")
         await asyncio.sleep(1)
-        
         if win:
             win_amount = int(bet * 2.2)
-            user['balance'] += win_amount
-            user['total_bets'] += 1
-            user['total_wins'] += 1
-            save_user(message.from_user.id, user)
-            await message.answer(f"✅ ГОЛ! +{win_amount} ₽\n💰 Баланс: {user['balance']} ₽")
+            await update_user(message.from_user.id, balance=user['balance'] + win_amount, total_bets=user['total_bets'] + 1, total_wins=user['total_wins'] + 1)
+            await message.answer(f"✅ ГОЛ! +{win_amount} ₽")
         else:
-            user['balance'] -= bet
-            user['total_bets'] += 1
-            save_user(message.from_user.id, user)
-            await message.answer(f"❌ МИМО! -{bet} ₽\n💰 Баланс: {user['balance']} ₽")
-    except ValueError:
-        await message.answer("❌ Введи число!")
+            await update_user(message.from_user.id, balance=user['balance'] - bet, total_bets=user['total_bets'] + 1)
+            await message.answer(f"❌ МИМО! -{bet} ₽")
     except Exception as e:
         logger.error(f"Ошибка в !ф: {e}")
 
@@ -700,60 +526,32 @@ async def darts_game(message: types.Message):
     try:
         parts = message.text.split()
         if len(parts) < 2:
-            await message.answer("❌ Пример: !д 100")
             return
         bet = int(parts[1])
-        
-        user = init_user(message.from_user.id, message.from_user.username)
-        
-        if bet < 1:
-            await message.answer("❌ Минимум 1 ₽")
+        user = await get_user(message.from_user.id)
+        if bet < 1 or bet > user['balance']:
+            await message.answer("❌ Неверная сумма!")
             return
-        if bet > user['balance']:
-            await message.answer(f"❌ Не хватает! Баланс: {user['balance']} ₽")
-            return
-        
         win = random.random() < 0.40
         await message.answer("🎯 Бросок...")
         await asyncio.sleep(1)
-        
         if win:
             win_amount = int(bet * 2.5)
-            user['balance'] += win_amount
-            user['total_bets'] += 1
-            user['total_wins'] += 1
-            save_user(message.from_user.id, user)
-            await message.answer(f"✅ ПОПАЛ! +{win_amount} ₽\n💰 Баланс: {user['balance']} ₽")
+            await update_user(message.from_user.id, balance=user['balance'] + win_amount, total_bets=user['total_bets'] + 1, total_wins=user['total_wins'] + 1)
+            await message.answer(f"✅ ПОПАЛ! +{win_amount} ₽")
         else:
-            user['balance'] -= bet
-            user['total_bets'] += 1
-            save_user(message.from_user.id, user)
-            await message.answer(f"❌ МИМО! -{bet} ₽\n💰 Баланс: {user['balance']} ₽")
-    except ValueError:
-        await message.answer("❌ Введи число!")
+            await update_user(message.from_user.id, balance=user['balance'] - bet, total_bets=user['total_bets'] + 1)
+            await message.answer(f"❌ МИМО! -{bet} ₽")
     except Exception as e:
         logger.error(f"Ошибка в !д: {e}")
 
 @dp.message(lambda msg: msg.text == "👤 Профиль")
 async def profile(message: types.Message):
     try:
-        user = init_user(message.from_user.id, message.from_user.username)
+        user = await get_user(message.from_user.id)
         premium = "❌ Нет" if user.get('premium', 0) == 0 else f"✅ {user.get('premium', 0)} 💎"
-        user_id = message.from_user.id
-        
-        users = load_users()
-        real_players = []
-        for uid, data in users.items():
-            if data.get('total_bets', 0) > 0 or data.get('balance', 0) > 5000:
-                real_players.append(data.get('balance', 0))
-        real_players.sort(reverse=True)
-        position = 1
-        for bal in real_players:
-            if user['balance'] < bal:
-                position += 1
-            else:
-                break
-        
+        users = await get_all_users()
+        position = sum(1 for u in users if u.get('balance', 0) > user['balance']) + 1
         profile_text = f"""👤 {user['name']}
 
 👑 Премиум: {premium}
@@ -764,34 +562,28 @@ async def profile(message: types.Message):
 📊 Лимит: {get_max_transfer(user.get('limit_level', 1))} ₽
 🍀 Ставок: {user.get('total_bets', 0)}
 🏆 Побед: {user.get('total_wins', 0)}"""
-        
-        if user_id in profile_messages:
+        if message.from_user.id in profile_messages:
             try:
-                await profile_messages[user_id].edit_text(profile_text)
+                await profile_messages[message.from_user.id].edit_text(profile_text)
                 return
             except:
                 pass
-        
         msg = await message.answer(profile_text)
-        profile_messages[user_id] = msg
+        profile_messages[message.from_user.id] = msg
     except Exception as e:
         logger.error(f"Ошибка в Профиль: {e}")
 
 @dp.callback_query(lambda c: c.data == "back_main")
 async def back_to_main(callback: types.CallbackQuery):
-    try:
-        await callback.message.answer("◀️ Главное меню", reply_markup=main_keyboard)
-        await callback.answer()
-    except Exception as e:
-        logger.error(f"Ошибка в back_main: {e}")
+    await callback.message.answer("◀️ Главное меню", reply_markup=main_keyboard)
+    await callback.answer()
 
 async def main():
+    await init_db()
     logger.info("🤖 Бот запущен!")
-    
     asyncio.create_task(bank_profit_worker())
     asyncio.create_task(personal_bonus_worker())
     asyncio.create_task(cleanup_old_messages())
-    
     while True:
         try:
             await dp.start_polling(bot)
