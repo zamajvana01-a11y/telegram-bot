@@ -120,6 +120,39 @@ async def show_id(message: types.Message):
         parse_mode="Markdown"
     )
 
+# ============ КОМАНДА ДЛЯ УДАЛЕНИЯ ДУБЛИКАТОВ ============
+@dp.message(Command("clear_duplicates"))
+async def clear_duplicates(message: types.Message):
+    user_id = message.from_user.id
+    if user_id != YOUR_USER_ID:
+        await message.answer("❌ Только для создателя бота!")
+        return
+    
+    users = load_users()
+    name_map = {}
+    to_delete = []
+    
+    # Находим дубликаты по никам
+    for uid, data in users.items():
+        name = data.get('name')
+        if name in name_map:
+            # Оставляем аккаунт с большим балансом
+            old_uid = name_map[name]
+            if data.get('balance', 0) > users[old_uid].get('balance', 0):
+                to_delete.append(old_uid)
+                name_map[name] = uid
+            else:
+                to_delete.append(uid)
+        else:
+            name_map[name] = uid
+    
+    # Удаляем дубликаты
+    for uid in to_delete:
+        del users[uid]
+    
+    save_users(users)
+    await message.answer(f"✅ Удалено {len(to_delete)} дубликатов аккаунтов!\n📊 Теперь у каждого игрока уникальный ник.")
+
 # ============ ФОНОВЫЙ ПРОЦЕНТ НА БАНК (КАЖДЫЙ ЧАС) ============
 async def bank_profit_worker():
     while True:
@@ -158,7 +191,6 @@ async def start(message: types.Message):
     init_user(message.from_user.id, message.from_user.username)
     promo_status = load_promo_status()
     
-    # Промокод показываем только если не использован
     promo_text = "\n\n🎁 Промокод: ПРОМО: ВАНЁК (1 септиллион, 1 раз)" if not promo_status.get("used", False) else ""
     
     await message.answer(
@@ -172,7 +204,7 @@ async def start(message: types.Message):
         f"🏆 Топ\n"
         f"🔄 Перевести\n"
         f"✏️ Сменить ник{promo_text}\n\n"
-        f"📌 Команда /id - узнать свой ID",
+        f"📌 Команды: /id, /clear_duplicates (только для создателя)",
         reply_markup=main_keyboard
     )
 
@@ -446,7 +478,6 @@ async def promo_vanek(message: types.Message):
         await message.answer("❌ **ПРОМОКОД УЖЕ ИСПОЛЬЗОВАН!**\n\nКто-то успел раньше...", parse_mode="Markdown")
         return
     
-    # Активируем промокод
     promo_status["used"] = True
     save_promo_status(promo_status)
     
@@ -454,7 +485,6 @@ async def promo_vanek(message: types.Message):
     user["balance"] += 1000000000000000000000000
     save_user(message.from_user.id, user)
     
-    # Обновляем сообщение с балансом
     if message.from_user.id in balance_messages:
         try:
             await balance_messages[message.from_user.id].edit_text(f"💰 Баланс: {user['balance']} ₽\n🏦 В банке: {user['bank']} ₽")
