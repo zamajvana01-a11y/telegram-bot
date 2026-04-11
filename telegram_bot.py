@@ -132,11 +132,9 @@ async def clear_duplicates(message: types.Message):
     name_map = {}
     to_delete = []
     
-    # Находим дубликаты по никам
     for uid, data in users.items():
         name = data.get('name')
         if name in name_map:
-            # Оставляем аккаунт с большим балансом
             old_uid = name_map[name]
             if data.get('balance', 0) > users[old_uid].get('balance', 0):
                 to_delete.append(old_uid)
@@ -146,17 +144,16 @@ async def clear_duplicates(message: types.Message):
         else:
             name_map[name] = uid
     
-    # Удаляем дубликаты
     for uid in to_delete:
         del users[uid]
     
     save_users(users)
     await message.answer(f"✅ Удалено {len(to_delete)} дубликатов аккаунтов!\n📊 Теперь у каждого игрока уникальный ник.")
 
-# ============ ФОНОВЫЙ ПРОЦЕНТ НА БАНК (КАЖДЫЙ ЧАС) ============
+# ============ ФОНОВЫЙ ПРОЦЕНТ НА БАНК ============
 async def bank_profit_worker():
     while True:
-        await asyncio.sleep(3600)  # 1 час
+        await asyncio.sleep(3600)
         users = load_users()
         for user_id, data in users.items():
             if data.get('bank', 0) > 0:
@@ -171,10 +168,10 @@ async def bank_profit_worker():
                         pass
         print("✅ Проценты на банк начислены")
 
-# ============ ФОНОВЫЙ БОНУС ДЛЯ ТЕБЯ (РАЗ В 2 ЧАСА) ============
+# ============ ЛИЧНЫЙ БОНУС ДЛЯ ТЕБЯ ============
 async def personal_bonus_worker():
     while True:
-        await asyncio.sleep(7200)  # 2 часа
+        await asyncio.sleep(7200)
         users = load_users()
         for user_id, data in users.items():
             if int(user_id) == YOUR_USER_ID:
@@ -204,7 +201,7 @@ async def start(message: types.Message):
         f"🏆 Топ\n"
         f"🔄 Перевести\n"
         f"✏️ Сменить ник{promo_text}\n\n"
-        f"📌 Команды: /id, /clear_duplicates (только для создателя)",
+        f"📌 Команды: /id, /clear_duplicates",
         reply_markup=main_keyboard
     )
 
@@ -469,7 +466,7 @@ async def promo_random(message: types.Message):
     save_user(message.from_user.id, user)
     await message.answer(f"✅ +{amount} ₽\n💰 Баланс: {user['balance']:,} ₽\n⏰ Следующий через 48ч!")
 
-# ============ ПРОМОКОД ПРОМО: ВАНЁК (1 активация) ============
+# ============ ПРОМОКОД ПРОМО: ВАНЁК ============
 @dp.message(lambda msg: msg.text == "ПРОМО: ВАНЁК")
 async def promo_vanek(message: types.Message):
     promo_status = load_promo_status()
