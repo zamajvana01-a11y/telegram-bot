@@ -120,7 +120,7 @@ async def show_id(message: types.Message):
         parse_mode="Markdown"
     )
 
-# ============ КОМАНДА ДЛЯ УДАЛЕНИЯ ДУБЛИКАТОВ ============
+# ============ КОМАНДА ДЛЯ УДАЛЕНИЯ ДУБЛИКАТОВ (ДЛЯ ВСЕХ ИГРОКОВ) ============
 @dp.message(Command("clear_duplicates"))
 async def clear_duplicates(message: types.Message):
     user_id = message.from_user.id
