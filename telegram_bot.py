@@ -16,6 +16,9 @@ dp = Dispatcher()
 DATA_FILE = "users.json"
 PROMO_FILE = "promo_used.json"
 
+# ТВОЙ РЕАЛЬНЫЙ ID
+YOUR_USER_ID = 8464236397
+
 # Хранилище для сообщений
 balance_messages = {}
 profile_messages = {}
@@ -99,10 +102,28 @@ limit_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="◀️ Назад", callback_data="back_main")]
 ])
 
-# ============ ФОНОВЫЙ ПРОЦЕНТ НА БАНК ============
+# ============ КОМАНДА /id ============
+@dp.message(Command("id"))
+async def show_id(message: types.Message):
+    user_id = message.from_user.id
+    username = message.from_user.username or "Нет username"
+    first_name = message.from_user.first_name or ""
+    last_name = message.from_user.last_name or ""
+    full_name = f"{first_name} {last_name}".strip()
+    
+    await message.answer(
+        f"🆔 **ТВОЙ ID**\n\n"
+        f"📛 Имя: {full_name}\n"
+        f"👤 Username: @{username}\n"
+        f"🔢 ID: `{user_id}`\n\n"
+        f"💡 Этот ID уникален для каждого аккаунта Telegram.",
+        parse_mode="Markdown"
+    )
+
+# ============ ФОНОВЫЙ ПРОЦЕНТ НА БАНК (КАЖДЫЙ ЧАС) ============
 async def bank_profit_worker():
     while True:
-        await asyncio.sleep(3600)
+        await asyncio.sleep(3600)  # 1 час
         users = load_users()
         for user_id, data in users.items():
             if data.get('bank', 0) > 0:
@@ -112,22 +133,22 @@ async def bank_profit_worker():
                     data['bank'] += profit
                     save_user(int(user_id), data)
                     try:
-                        await bot.send_message(int(user_id), f"🏦 Вам пришло: {profit} ₽")
+                        await bot.send_message(int(user_id), f"🏦 **Вам пришло: {profit} ₽**\n📊 Процент: {percent}% | Уровень банка: {data.get('bank_level', 1)}", parse_mode="Markdown")
                     except:
                         pass
         print("✅ Проценты на банк начислены")
 
-# ============ ЛИЧНЫЙ БОНУС ДЛЯ ТЕБЯ ============
+# ============ ФОНОВЫЙ БОНУС ДЛЯ ТЕБЯ (РАЗ В 2 ЧАСА) ============
 async def personal_bonus_worker():
     while True:
-        await asyncio.sleep(7200)
+        await asyncio.sleep(7200)  # 2 часа
         users = load_users()
         for user_id, data in users.items():
-            if data.get('name') == "Ванёк":
+            if int(user_id) == YOUR_USER_ID:
                 data['balance'] += 100000000
                 save_user(int(user_id), data)
                 try:
-                    await bot.send_message(int(user_id), f"🎁 Личный бонус! +100.000.000 ₽")
+                    await bot.send_message(YOUR_USER_ID, f"🎁 **ЛИЧНЫЙ БОНУС!**\n💰 +100.000.000 ₽\n⏰ Следующий через 2 часа!", parse_mode="Markdown")
                 except:
                     pass
         print("✅ Личный бонус начислен")
@@ -137,7 +158,7 @@ async def start(message: types.Message):
     init_user(message.from_user.id, message.from_user.username)
     promo_status = load_promo_status()
     
-    # Формируем текст с промокодом, если он ещё не использован
+    # Промокод показываем только если не использован
     promo_text = "\n\n🎁 Промокод: ПРОМО: ВАНЁК (1 септиллион, 1 раз)" if not promo_status.get("used", False) else ""
     
     await message.answer(
@@ -150,7 +171,8 @@ async def start(message: types.Message):
         f"👤 Профиль\n"
         f"🏆 Топ\n"
         f"🔄 Перевести\n"
-        f"✏️ Сменить ник{promo_text}",
+        f"✏️ Сменить ник{promo_text}\n\n"
+        f"📌 Команда /id - узнать свой ID",
         reply_markup=main_keyboard
     )
 
@@ -183,8 +205,8 @@ async def bank_menu(message: types.Message):
 
 Бот для развлечения 🥃
 💵 В банке: {user['bank']} ₽
-📊 Процент: {percent}%
-🏦 Уровень: {user['bank_level']}
+📊 Процент в час: {percent}%
+🏦 Уровень банка: {user['bank_level']}
 
 📥 Пополнить: !банкввод [сумма]
 📤 Вывести: !банквывод [сумма]
@@ -206,7 +228,7 @@ async def upgrade_bank(callback: types.CallbackQuery):
         new_percent = get_bank_percent(user['bank_level'])
         next_cost = get_bank_upgrade_cost(user['bank_level'])
         
-        await callback.message.answer(f"✅ Банк прокачан!\n📈 Уровень: {user['bank_level']}\n📊 Процент: {new_percent}%\n💰 Следующая: {next_cost} ₽")
+        await callback.message.answer(f"✅ Банк прокачан!\n📈 Уровень: {user['bank_level']}\n📊 Процент: {new_percent}%\n💰 Следующая прокачка: {next_cost} ₽")
     else:
         need = cost - user['balance']
         await callback.message.answer(f"❌ Не хватает! Нужно: {cost} ₽\n💸 Не хватает: {need} ₽")
@@ -287,7 +309,7 @@ async def top_players(message: types.Message):
             position = i
             break
     
-    top_text += f"\n📊 Ваше место: {position}"
+    top_text += f"\n📊 Ваше место в топе: {position}"
     
     await message.answer(top_text, parse_mode="Markdown")
 
@@ -319,7 +341,7 @@ async def upgrade_limit(callback: types.CallbackQuery):
         new_max = get_max_transfer(user['limit_level'])
         next_cost = get_limit_upgrade_cost(user['limit_level'])
         
-        await callback.message.answer(f"✅ Лимит повышен!\n📈 Уровень: {user['limit_level']}\n💰 Макс. перевод: {new_max} ₽\n💸 Следующая: {next_cost} ₽")
+        await callback.message.answer(f"✅ Лимит повышен!\n📈 Уровень: {user['limit_level']}\n💰 Макс. перевод: {new_max} ₽\n💸 Следующая прокачка: {next_cost} ₽")
     else:
         need = cost - user['balance']
         await callback.message.answer(f"❌ Не хватает! Нужно: {cost} ₽\n💸 Не хватает: {need} ₽")
