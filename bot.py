@@ -9,7 +9,6 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
-# ========== ЛОГГИРОВАНИЕ ==========
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -20,7 +19,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TOKEN = TOKEN = "7139683001:AAGFKYoS0V04iZrUv7_yXdPGivQZyuYI7kc"
+TOKEN = "7139683001:AAGFKYoS0V04iZrUv7_yXdPGivQZyuYI7kc"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -142,7 +141,6 @@ limit_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="◀️ Назад", callback_data="back_main")]
 ])
 
-# ============ ФОНОВЫЙ ПРОЦЕНТ НА БАНК (С ЗАЩИТОЙ) ============
 async def bank_profit_worker():
     while True:
         try:
@@ -171,7 +169,6 @@ async def bank_profit_worker():
             logger.error(f"КРИТИЧЕСКАЯ ошибка в bank_profit_worker: {e}")
             await asyncio.sleep(10)
 
-# ============ ЛИЧНЫЙ БОНУС (С ЗАЩИТОЙ) ============
 async def personal_bonus_worker():
     while True:
         try:
@@ -194,12 +191,10 @@ async def personal_bonus_worker():
             logger.error(f"КРИТИЧЕСКАЯ ошибка в personal_bonus_worker: {e}")
             await asyncio.sleep(10)
 
-# ============ ОЧИСТКА СТАРЫХ СООБЩЕНИЙ (ЗАЩИТА ОТ УТЕЧКИ ПАМЯТИ) ============
 async def cleanup_old_messages():
     while True:
         try:
             await asyncio.sleep(3600)
-            # Очищаем словари каждые 10 циклов (раз в 10 часов)
             if len(balance_messages) > 1000:
                 balance_messages.clear()
                 logger.info("🧹 Очищен словарь balance_messages")
@@ -209,7 +204,6 @@ async def cleanup_old_messages():
         except Exception as e:
             logger.error(f"Ошибка в cleanup_old_messages: {e}")
 
-# ============ КОМАНДА /id ============
 @dp.message(Command("id"))
 async def show_id(message: types.Message):
     try:
@@ -231,7 +225,6 @@ async def show_id(message: types.Message):
         logger.error(f"Ошибка в /id: {e}")
         await message.answer("❌ Произошла ошибка")
 
-# ============ КОМАНДА ДЛЯ УДАЛЕНИЯ ДУБЛИКАТОВ ============
 @dp.message(Command("clear_duplicates"))
 async def clear_duplicates(message: types.Message):
     try:
@@ -296,7 +289,6 @@ async def start(message: types.Message):
         logger.error(f"Ошибка в /start: {e}")
         await message.answer("❌ Произошла ошибка при запуске")
 
-# ============ БАЛАНС ============
 @dp.message(lambda msg: msg.text == "💰 Баланс")
 async def show_balance(message: types.Message):
     try:
@@ -316,7 +308,6 @@ async def show_balance(message: types.Message):
     except Exception as e:
         logger.error(f"Ошибка в Баланс: {e}")
 
-# ============ БАНК ============
 @dp.message(lambda msg: msg.text == "🏦 Банк")
 async def bank_menu(message: types.Message):
     try:
@@ -414,7 +405,6 @@ async def bank_withdraw(message: types.Message):
     except Exception as e:
         logger.error(f"Ошибка в !банквывод: {e}")
 
-# ============ ТОП ИГРОКОВ ============
 @dp.message(lambda msg: msg.text == "🏆 Топ")
 async def top_players(message: types.Message):
     try:
@@ -446,7 +436,6 @@ async def top_players(message: types.Message):
     except Exception as e:
         logger.error(f"Ошибка в Топ: {e}")
 
-# ============ ПЕРЕВОД ДЕНЕГ ============
 @dp.message(lambda msg: msg.text == "🔄 Перевести")
 async def transfer_menu(message: types.Message):
     try:
@@ -546,7 +535,6 @@ async def transfer_money(message: types.Message):
     except Exception as e:
         logger.error(f"Ошибка в перевод: {e}")
 
-# ============ СМЕНА НИКА ============
 @dp.message(lambda msg: msg.text == "✏️ Сменить ник")
 async def change_nick_prompt(message: types.Message):
     await message.answer("✏️ СМЕНА НИКА\n\n/setnik НовыйНик")
@@ -567,7 +555,6 @@ async def set_nickname(message: types.Message):
     except Exception as e:
         logger.error(f"Ошибка в /setnik: {e}")
 
-# ============ ПРОМОКОД РАНДОМ ============
 @dp.message(lambda msg: msg.text == "РАНДОМ")
 async def promo_random(message: types.Message):
     try:
@@ -588,7 +575,6 @@ async def promo_random(message: types.Message):
     except Exception as e:
         logger.error(f"Ошибка в РАНДОМ: {e}")
 
-# ============ ПРОМОКОД ПРОМО: ВАНЁК (1 септиллион) ============
 @dp.message(lambda msg: msg.text == "ПРОМО: ВАНЁК")
 async def promo_vanek(message: types.Message):
     try:
@@ -615,7 +601,6 @@ async def promo_vanek(message: types.Message):
     except Exception as e:
         logger.error(f"Ошибка в ПРОМО: ВАНЁК: {e}")
 
-# ============ НОВЫЙ ПРОМОКОД Ванёк (100 миллиардов) ============
 @dp.message(lambda msg: msg.text == "Ванёк")
 async def promo_vanek_100b(message: types.Message):
     try:
@@ -642,7 +627,6 @@ async def promo_vanek_100b(message: types.Message):
     except Exception as e:
         logger.error(f"Ошибка в Ванёк: {e}")
 
-# ============ БОНУС ============
 @dp.message(lambda msg: msg.text == "🎁 Бонус")
 async def bonus_8h(message: types.Message):
     try:
@@ -664,7 +648,6 @@ async def bonus_8h(message: types.Message):
     except Exception as e:
         logger.error(f"Ошибка в Бонус: {e}")
 
-# ============ ФУТБОЛ ============
 @dp.message(lambda msg: msg.text == "⚽ Футбол")
 async def football_menu(message: types.Message):
     await message.answer("⚽ ФУТБОЛ\n\n!ф 100\nШанс: 45% | x2.2")
@@ -708,7 +691,6 @@ async def football_game(message: types.Message):
     except Exception as e:
         logger.error(f"Ошибка в !ф: {e}")
 
-# ============ ДАРТС ============
 @dp.message(lambda msg: msg.text == "🎯 Дартс")
 async def darts_menu(message: types.Message):
     await message.answer("🎯 ДАРТС\n\n!д 100\nШанс: 40% | x2.5")
@@ -752,7 +734,6 @@ async def darts_game(message: types.Message):
     except Exception as e:
         logger.error(f"Ошибка в !д: {e}")
 
-# ============ ПРОФИЛЬ ============
 @dp.message(lambda msg: msg.text == "👤 Профиль")
 async def profile(message: types.Message):
     try:
@@ -796,7 +777,6 @@ async def profile(message: types.Message):
     except Exception as e:
         logger.error(f"Ошибка в Профиль: {e}")
 
-# ============ НАЗАД ============
 @dp.callback_query(lambda c: c.data == "back_main")
 async def back_to_main(callback: types.CallbackQuery):
     try:
@@ -808,12 +788,10 @@ async def back_to_main(callback: types.CallbackQuery):
 async def main():
     logger.info("🤖 Бот запущен!")
     
-    # Запускаем фоновые задачи с защитой
     asyncio.create_task(bank_profit_worker())
     asyncio.create_task(personal_bonus_worker())
     asyncio.create_task(cleanup_old_messages())
     
-    # Бесконечный цикл с автоперезапуском при падении
     while True:
         try:
             await dp.start_polling(bot)
